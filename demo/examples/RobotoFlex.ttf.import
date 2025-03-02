@@ -15,6 +15,7 @@ dest_files=["res://.godot/imported/RobotoFlex.ttf-cb674938bb2a1bd065a865cbcb9880
 Rendering=null
 antialiasing=1
 generate_mipmaps=false
+disable_embedded_bitmaps=true
 multichannel_signed_distance_field=false
 msdf_pixel_range=8
 msdf_size=48
