@@ -23,7 +23,7 @@ const Image::Format IMAGE_FORMAT = Image::Format::FORMAT_RGBA8;
 RiveViewerBase::RiveViewerBase(CanvasItem *owner) {
     this->owner = owner;
     inst.set_props(&props);
-    sk.set_props(&props);
+    // rive.set_props(&props);
     props.on_artboard_changed([this](int index) { _on_artboard_changed(index); });
     props.on_scene_changed([this](int index) { _on_scene_changed(index); });
     props.on_animation_changed([this](int index) { _on_animation_changed(index); });
@@ -98,7 +98,7 @@ int RiveViewerBase::height() const {
 
 void RiveViewerBase::_on_path_changed(String path) {
     try {
-        inst.file = RiveFile::Load(path, sk.factory.get());
+        // inst.file = RiveFile::Load(path, rive.context.get());
         GDPRINT("Successfully imported <", path, ">!");
     } catch (RiveException error) {
         error.report();
@@ -202,7 +202,7 @@ void RiveViewerBase::_on_size_changed(float w, float h) {
 }
 
 void RiveViewerBase::_on_transform_changed() {
-    if (sk.renderer) sk.renderer->transform(inst.current_transform);
+    // if (rive.renderer) rive.renderer->transform(inst.current_transform);
     PackedByteArray bytes = frame(0.0);
     if (bytes.size()) {
         image->set_data(width(), height(), false, IMAGE_FORMAT, bytes);
@@ -218,16 +218,17 @@ bool RiveViewerBase::advance(float delta) {
 
 PackedByteArray RiveViewerBase::redraw() {
     auto artboard = inst.artboard();
-    if (sk.surface && sk.renderer && exists(artboard)) {
-        sk.clear();
-        inst.draw(sk.renderer.get());
-        return sk.bytes();
-    }
+    // if (rive.context && rive.renderer && exists(artboard)) {
+    //     rive.clear();
+    //     inst.draw(rive.renderer.get());
+    //     return rive.bytes();
+    // }
     return PackedByteArray();
 }
 
 PackedByteArray RiveViewerBase::frame(float delta) {
-    if (!exists(inst.file) || !exists(inst.artboard()) || !sk.renderer || !sk.surface) return PackedByteArray();
+    return PackedByteArray();
+    // if (!exists(inst.file) || !exists(inst.artboard()) || !rive.renderer || !rive.context) return PackedByteArray();
     if (advance(delta) && owner->is_visible()) return redraw();
     return PackedByteArray();
 }

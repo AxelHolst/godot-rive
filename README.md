@@ -1,6 +1,6 @@
 # Godot Rive
 
-### An integration of Rive into Godot 4.1+ using GDExtension
+### An integration of Rive into Godot 4.3+ using GDExtension
 
 > [!WARNING]
 > This extension is in **alpha**. That means:
@@ -36,13 +36,18 @@ It makes use of the following third-party libraries:
 > [!IMPORTANT]
 > These instructions are only tested on M1 MacOS. You may have to modify `build/build.py` or `build/SConstruct` for your system.
 
+
 The following must be installed:
 - Python 3
 - [git](https://git-scm.com/)
 - [scons](https://scons.org/)
 - [ninja](https://ninja-build.org/)
+- premake5
 
-To build, run the following commands (from the root directory):
+1. Build `thirdparty/rive-cpp`
+2. Build `thirdparty/rive-cpp/renderer`
+3. Build `thirdparty/rive-cpp/decoders`
+4. To build, run the following commands (from the root directory):
 ```bash
 cd build
 python build.py

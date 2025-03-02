@@ -9,8 +9,11 @@
                 "${workspaceFolder}/godot-cpp/gen/include",
                 "${workspaceFolder}/thirdparty/rive-cpp",
                 "${workspaceFolder}/thirdparty/rive-cpp/include",
+                "${workspaceFolder}/thirdparty/rive-cpp/renderer/include",
+                "${workspaceFolder}/thirdparty/rive-cpp/renderer",
                 "${workspaceFolder}/godot-cpp/gdextension",
-                "${workspaceFolder}/thirdparty/rive-cpp/skia/dependencies/skia"
+                "${workspaceFolder}/thirdparty/rive-cpp/skia/dependencies/skia",
+                "${workspaceFolder}/thirdparty/rive-cpp/renderer/glad"
             ],
             "defines": [],
             "macFrameworkPath": [

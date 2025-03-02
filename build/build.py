@@ -75,36 +75,6 @@ def build_rive(platform: str, target: str):
     handle_fail(subprocess.call(args, cwd="../thirdparty/rive-cpp"))
 
 
-def build_skia_dependencies() -> int:
-    if not exists("../thirdparty/rive-cpp/skia/dependencies/skia"):
-        return subprocess.call(
-            ["sh", "make_dependencies.sh"],
-            cwd="../thirdparty/rive-cpp/skia/dependencies",
-        )
-    else:
-        print("Skia is already built!")
-        return 0
-
-
-def build_skia(platform: str, target: str):
-    print(Bold("\nRunning Rive's skia build script..."))
-    print_list(
-        ("Platform", platform if len(platform) else "<auto>"),
-        ("Target", target),
-    )
-    print(f"---{LIGHT_GREY}")
-    update_rive()
-    code = build_skia_dependencies()
-    if code == 0:
-        args = ["sh", "build.sh"]
-        if len(platform):
-            args.append("-p")
-            args.append(platform)
-        args.append(target)
-        code = subprocess.call(args, cwd="../thirdparty/rive-cpp/skia/renderer")
-    handle_fail(code)
-
-
 def build_extension(
     platform: str = "",
     target: str = "",
@@ -234,7 +204,6 @@ godot_platform: str = PLATFORM_MAP[platform] if platform in PLATFORM_MAP else ""
 godot_target: str = TARGET_MAP[target] if target in TARGET_MAP else "template_debug"
 
 build_rive(platform, target)
-build_skia(platform, target)
 if target != "clean":
     build_extension(
         platform=godot_platform,

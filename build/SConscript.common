@@ -47,7 +47,11 @@ def FailBuild(self, reason: str, detail: str):
     Exit()
 
 
-def RequireFile(self, file):
+def RequireFile(self, file: str):
+    """
+    Fail build if file doesn't exist.
+    """
+
     if not exists(file.get_path()):
         base_path = getcwd().removesuffix("/build")
         self.FailBuild("Missing dependency", file.get_path().replace(base_path, ""))

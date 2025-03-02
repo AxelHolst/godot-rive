@@ -3,6 +3,10 @@ from os.path import join
 
 
 def GetRiveBin(path: str) -> str:
+    """
+    Formats path to bin within `rive-cpp` based on current environment.
+    """
+
     platform_map = {
         "macos": "macosx",
         "windows": "windows",
@@ -11,6 +15,7 @@ def GetRiveBin(path: str) -> str:
         "template_debug": "debug",
         "template_release": "release",
     }
+
     return File(
         join(
             "../thirdparty/rive-cpp",
@@ -28,30 +33,25 @@ env = SConscript("../godot-cpp/SConstruct")
 
 env["STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME"] = True
 
-sources = []
+# This library uses exceptions, so remove the no exceptions flag
+if "-fno-exceptions" in env["CXXFLAGS"]:
+    env["CXXFLAGS"].remove("-fno-exceptions")
 
-# Add skia library
-SKIA_SRC_DIR = "../thirdparty/rive-cpp/skia/dependencies/skia"
-env.RequireFile(Dir(SKIA_SRC_DIR))
-env.Prepend(
-    LIBS=["skia"],
-    LIBPATH=[join(SKIA_SRC_DIR, "out/static")],
-    CPPPATH=[
-        SKIA_SRC_DIR,
-        join(SKIA_SRC_DIR, "include"),
-        join(SKIA_SRC_DIR, "src"),
-    ],
-)
+sources = []
 
 # Add rive library
 
 rive_bins = [
     GetRiveBin("build/{platform}/bin/{target}/librive{suffix}"),
-    GetRiveBin(
-        "skia/renderer/build/{platform}/bin/{target}/librive_skia_renderer{suffix}"
-    ),
     GetRiveBin("dependencies/{platform}/cache/bin/{target}/librive_harfbuzz{suffix}"),
     GetRiveBin("dependencies/{platform}/cache/bin/{target}/librive_sheenbidi{suffix}"),
+    GetRiveBin("dependencies/{platform}/cache/bin/{target}/librive_yoga{suffix}"),
+    GetRiveBin("renderer/out/{target}/librive_pls_renderer{suffix}"),
+    GetRiveBin("decoders/out/{target}/liblibjpeg{suffix}"),
+    GetRiveBin("decoders/out/{target}/liblibpng{suffix}"),
+    GetRiveBin("decoders/out/{target}/liblibwebp{suffix}"),
+    GetRiveBin("decoders/out/{target}/librive_decoders{suffix}"),
+    GetRiveBin("decoders/out/{target}/libzlib{suffix}"),
 ]
 
 for lib in rive_bins:
@@ -64,9 +64,13 @@ env.Prepend(
         RIVE_SRC_DIR,
         join(RIVE_SRC_DIR, "include"),
         join(RIVE_SRC_DIR, "src"),
-        join(RIVE_SRC_DIR, "skia/renderer"),
-        join(RIVE_SRC_DIR, "skia/renderer/include"),
-        join(RIVE_SRC_DIR, "skia/renderer/src"),
+        join(RIVE_SRC_DIR, "renderer"),
+        join(RIVE_SRC_DIR, "renderer/include"),
+        join(RIVE_SRC_DIR, "renderer/src"),
+        join(RIVE_SRC_DIR, "renderer/glad"),
+        join(RIVE_SRC_DIR, "decoders"),
+        join(RIVE_SRC_DIR, "decoders/include"),
+        join(RIVE_SRC_DIR, "decoders/src"),
     ],
 )
 
