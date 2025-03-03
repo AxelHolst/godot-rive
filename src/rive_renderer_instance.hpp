@@ -7,11 +7,10 @@
 // rive-cpp
 #include <glad.h>
 
-#include <rive/renderer/gl/render_context_gl_impl.hpp>
-#include <rive/renderer/render_context.hpp>
 #include <rive/renderer/rive_renderer.hpp>
 
 // extension
+#include "rive_render_context.hpp"
 #include "utils/types.hpp"
 #include "viewer_props.hpp"
 
@@ -22,8 +21,8 @@ using namespace gpu;
 struct RiveRendererInstance {
     ViewerProps* props;
 
-    // Ptr<RenderContext> context = RenderContextGLImpl::MakeContext();
-    // Ptr<RiveRenderer> renderer = std::make_unique<RiveRenderer>(context.get());
+    Ptr<RenderContext> context = RenderContextNULL::MakeContext();
+    Ptr<RiveRenderer> renderer = std::make_unique<RiveRenderer>(context.get());
 
     void set_props(ViewerProps* props_value) {
         props = props_value;

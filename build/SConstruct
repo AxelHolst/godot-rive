@@ -47,11 +47,13 @@ rive_bins = [
     GetRiveBin("dependencies/{platform}/cache/bin/{target}/librive_sheenbidi{suffix}"),
     GetRiveBin("dependencies/{platform}/cache/bin/{target}/librive_yoga{suffix}"),
     GetRiveBin("renderer/out/{target}/librive_pls_renderer{suffix}"),
-    GetRiveBin("decoders/out/{target}/liblibjpeg{suffix}"),
-    GetRiveBin("decoders/out/{target}/liblibpng{suffix}"),
-    GetRiveBin("decoders/out/{target}/liblibwebp{suffix}"),
-    GetRiveBin("decoders/out/{target}/librive_decoders{suffix}"),
-    GetRiveBin("decoders/out/{target}/libzlib{suffix}"),
+    GetRiveBin("renderer/out/{target}/librive_decoders{suffix}"),
+    # GetRiveBin("renderer/out/{target}/librive{suffix}"),
+    # GetRiveBin("decoders/out/{target}/liblibjpeg{suffix}"),
+    # GetRiveBin("decoders/out/{target}/liblibpng{suffix}"),
+    # GetRiveBin("decoders/out/{target}/liblibwebp{suffix}"),
+    # GetRiveBin("decoders/out/{target}/librive_decoders{suffix}"),
+    # GetRiveBin("decoders/out/{target}/libzlib{suffix}"),
 ]
 
 for lib in rive_bins:
