@@ -4,13 +4,15 @@
 
 > [!WARNING]
 > This extension is in **alpha**. That means:
-> * You may encounter some bugs
-> * It's untested on many platforms
-> * Most features are implemented, but the API may change a little
+>
+> - You may encounter some bugs
+> - It's untested on many platforms
+> - Most features are implemented, but the API may change a little
 
 This extensions adds [Rive](https://rive.app) support to Godot 4.
 
 It makes use of the following third-party libraries:
+
 - [`rive-cpp`](https://github.com/rive-app/rive-cpp)
 - [`skia`](https://github.com/google/skia) (included in `rive-cpp`)
 
@@ -25,35 +27,45 @@ It makes use of the following third-party libraries:
 
 ## Features
 
-* Load `.riv` files (artboards, animations, and state machines)
-* Listen for input events
-* Change state machine properties in-editor and in code
-* Robust API for runtime interaction
-* Optimized for Godot
+- Load `.riv` files (artboards, animations, and state machines)
+- Listen for input events
+- Change state machine properties in-editor and in code
+- Robust API for runtime interaction
+- Optimized for Godot
 
 ## Building
 
 > [!IMPORTANT]
-> These instructions are only tested on M1 MacOS. You may have to modify `build/build.py` or `build/SConstruct` for your system.
-
+> These instructions are only tested on MacOS. You may have to modify `build/build.py` or `build/SConstruct` for your system.
 
 The following must be installed:
+
 - Python 3
 - [git](https://git-scm.com/)
 - [scons](https://scons.org/)
 - [ninja](https://ninja-build.org/)
 - premake5
 
-1. Build `thirdparty/rive-cpp`
-2. Build `thirdparty/rive-cpp/renderer`
-3. Build `thirdparty/rive-cpp/decoders`
+1. Follow the build instructions in `thirdparty/rive-cpp/renderer/README.md`. When running `build_rive.sh` make sure to include the `--with-rtti` command, e.g. `build_rive.sh release --with-rtti`.
+2. You make have to add the following to `thirdparty/rive-cpp/dependencies/premake5_harfbuzz_v2.lua` (somewhere in the `files` function, after line 17):
+
+```lua
+harfbuzz .. '/src/hb-face-builder.cc',
+harfbuzz .. '/src/hb-subset-instancer-iup.cc',
+harfbuzz .. '/src/hb-subset-instancer-iup.h',
+harfbuzz .. '/src/hb-subset-instancer-solver.cc',
+harfbuzz .. '/src/hb-subset-instancer-solver.h',
+```
+
 4. To build, run the following commands (from the root directory):
+
 ```bash
 cd build
 python build.py
 ```
 
 To see the available options, run:
+
 ```bash
 python build.py --help
 ```
@@ -68,6 +80,7 @@ python build.py --help
 2. Update the paths in `rive.gdextension` to match your project folder structure
 
 ## Roadmap
+
 - [x] Load `.riv` files
 - [x] Run and play Rive animations
 - [x] Raster image support
@@ -90,11 +103,12 @@ python build.py --help
 ## Contributing
 
 Help would be MUCH appreciated testing and/or building for the following platforms:
-* Windows
-* Android
-* iOS
-* Linux
-* Web
+
+- Windows
+- Android
+- iOS
+- Linux
+- Web
 
 Feel free to contribute bug fixes (see open issues), documentation, or features as well.
 

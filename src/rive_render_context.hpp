@@ -2,6 +2,7 @@
 #define _RIVEEXTENSION_RIVE_RENDER_CONTEXT_HPP_
 
 // rive-cpp
+#include <rive/renderer.hpp>
 #include <rive/renderer/render_context_helper_impl.hpp>
 #include <rive/renderer/texture.hpp>
 #include <utils/factory_utils.hpp>

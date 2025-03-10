@@ -1,32 +1,6 @@
 #!/usr/bin/env python
 from os.path import join
-
-
-def GetRiveBin(path: str) -> str:
-    """
-    Formats path to bin within `rive-cpp` based on current environment.
-    """
-
-    platform_map = {
-        "macos": "macosx",
-        "windows": "windows",
-    }
-    target_map = {
-        "template_debug": "debug",
-        "template_release": "release",
-    }
-
-    return File(
-        join(
-            "../thirdparty/rive-cpp",
-            path.format(
-                platform=platform_map.get(env["platform"], env["platform"]),
-                target=target_map.get(env["target"], env["target"]),
-                suffix=env.get("LIBSUFFIX", ".a"),
-            ),
-        )
-    )
-
+import os
 
 SConscript("SConscript.common")
 env = SConscript("../godot-cpp/SConstruct")
@@ -40,28 +14,18 @@ if "-fno-exceptions" in env["CXXFLAGS"]:
 sources = []
 
 # Add rive library
-
-rive_bins = [
-    GetRiveBin("build/{platform}/bin/{target}/librive{suffix}"),
-    GetRiveBin("dependencies/{platform}/cache/bin/{target}/librive_harfbuzz{suffix}"),
-    GetRiveBin("dependencies/{platform}/cache/bin/{target}/librive_sheenbidi{suffix}"),
-    GetRiveBin("dependencies/{platform}/cache/bin/{target}/librive_yoga{suffix}"),
-    GetRiveBin("renderer/out/{target}/librive_pls_renderer{suffix}"),
-    GetRiveBin("renderer/out/{target}/librive_decoders{suffix}"),
-    # GetRiveBin("renderer/out/{target}/librive{suffix}"),
-    # GetRiveBin("decoders/out/{target}/liblibjpeg{suffix}"),
-    # GetRiveBin("decoders/out/{target}/liblibpng{suffix}"),
-    # GetRiveBin("decoders/out/{target}/liblibwebp{suffix}"),
-    # GetRiveBin("decoders/out/{target}/librive_decoders{suffix}"),
-    # GetRiveBin("decoders/out/{target}/libzlib{suffix}"),
-]
-
-for lib in rive_bins:
-    env.RequireFile(lib)
-
+env.Append(CXXFLAGS=["-frtti"])
 RIVE_SRC_DIR = "../thirdparty/rive-cpp/"
+RIVE_LIB_DIR = os.path.abspath(join(RIVE_SRC_DIR, "renderer/out/release"))
+rive_bins = [
+    join(RIVE_SRC_DIR, "renderer/out/release/librive.a"),
+    join(RIVE_SRC_DIR, "renderer/out/release/librive_pls_renderer.a"),
+    join(RIVE_SRC_DIR, "renderer/out/release/librive_decoders.a"),
+    join(RIVE_SRC_DIR, "renderer/out/release/librive_yoga.a"),
+    join(RIVE_SRC_DIR, "renderer/out/release/librive_sheenbidi.a"),
+    join(RIVE_SRC_DIR, "renderer/out/release/librive_harfbuzz.a"),
+]
 env.Prepend(
-    LIBS=rive_bins,
     CPPPATH=[
         RIVE_SRC_DIR,
         join(RIVE_SRC_DIR, "include"),
@@ -75,6 +39,34 @@ env.Prepend(
         join(RIVE_SRC_DIR, "decoders/src"),
     ],
 )
+env.Append(LIBPATH=[join(RIVE_SRC_DIR, "renderer/out/release")])
+env.Append(LIBPATH=[RIVE_LIB_DIR])
+if env["platform"] == "macos":
+    env.Append(
+        LINKFLAGS=[
+            "-all_load",
+            join(RIVE_LIB_DIR, "librive.a"),
+            join(RIVE_LIB_DIR, "librive_pls_renderer.a"),
+            join(RIVE_LIB_DIR, "librive_decoders.a"),
+            join(RIVE_LIB_DIR, "librive_yoga.a"),
+            join(RIVE_LIB_DIR, "librive_sheenbidi.a"),
+        ]
+    )
+    env.Append(LINKFLAGS=["-force_load", join(RIVE_LIB_DIR, "librive_harfbuzz.a")])
+else:
+    env.Append(
+        LINKFLAGS=[
+            "-Wl,--whole-archive",
+            join(RIVE_LIB_DIR, "librive.a"),
+            join(RIVE_LIB_DIR, "librive_pls_renderer.a"),
+            join(RIVE_LIB_DIR, "librive_decoders.a"),
+            join(RIVE_LIB_DIR, "librive_yoga.a"),
+            join(RIVE_LIB_DIR, "librive_sheenbidi.a"),
+            join(RIVE_LIB_DIR, "librive_harfbuzz.a"),
+            "-Wl,--no-whole-archive",
+        ]
+    )
+
 
 # Add source files
 env.Append(CPPPATH=["../src/"])
