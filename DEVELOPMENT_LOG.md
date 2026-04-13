@@ -77,27 +77,207 @@ Wrapper Classes:
 - [x] Create branch structure (main/develop)
 - [x] Clone research repositories
 - [x] Create governance files
-- [ ] Audit rive-runtime API structure
+- [x] Audit rive-runtime API structure
 - [ ] Verify build system works
 - [ ] Update godot-cpp submodule
 
 ---
 
-## Research Notes
+## 2025-04-13: API Research Complete
 
-### rive-runtime Structure (To Be Documented)
+### rive-runtime API Analysis
+
 Location: `~/Documents/GitHub/rive-research/rive-runtime/`
 
-Key directories to examine:
-- `/include/rive/` - Core API headers
-- `/renderer/` - Rendering backend
-- `/scripting/` - Luau integration
-- `/data_binding/` - ViewModel system (if present)
+#### Key Directories
+| Directory | Purpose |
+|-----------|---------|
+| `/include/rive/` | Core API headers |
+| `/include/rive/animation/` | State machines, inputs, events |
+| `/include/rive/data_bind/` | ViewModel/Data Binding system |
+| `/include/rive/audio/` | Audio engine and assets |
+| `/renderer/` | Rive Renderer (GPU) |
+| `/skia/` | Skia backend (CPU/GPU) |
+| `/scripting/` | Luau VM integration |
 
-### rive-unity Reference (To Be Documented)
-Location: `~/Documents/GitHub/rive-research/rive-unity/`
+#### Input System (SMIInput hierarchy)
+From `state_machine_input_instance.hpp`:
 
-Key files to study:
-- `/package/Runtime/` - C# wrapper implementations
-- ViewModel handling patterns
-- Event system implementation
+```cpp
+class SMIInput {
+    const std::string& name() const;
+    uint16_t inputCoreType() const;
+};
+
+class SMIBool : public SMIInput {
+    bool value() const;
+    void value(bool newValue);
+};
+
+class SMINumber : public SMIInput {
+    float value() const;
+    void value(float newValue);
+};
+
+class SMITrigger : public SMIInput, public Triggerable {
+    void fire();  // Key method - triggers are "fired", not set
+};
+```
+
+**Key Insight**: Triggers have a `fire()` method, not a value setter. They reset automatically after `advance()`.
+
+#### Event System
+From `state_machine_instance.hpp`:
+
+```cpp
+class StateMachineInstance {
+    std::size_t reportedEventCount() const;
+    const EventReport reportedEventAt(std::size_t index) const;
+};
+```
+
+Events are polled after `advance()` - not callback-based.
+
+#### Data Binding Structure
+Headers in `/include/rive/data_bind/`:
+- `bindable_property_*.hpp` - Property types (bool, number, string, enum, trigger, color)
+- `data_bind_context.hpp` - Binding context
+- `data_context.hpp` - Data source
+- `bindable_property_viewmodel.hpp` - ViewModel binding
+
+### rive-unity Implementation Patterns
+
+Location: `~/Documents/GitHub/rive-research/rive-unity/package/Runtime/`
+
+#### Input Wrapper Pattern (SMIInput.cs)
+```csharp
+public class SMIInput {
+    private readonly IntPtr m_nativeSMI;
+    public string Name { get; }
+    public bool IsBoolean { get; }
+    public bool IsTrigger { get; }
+    public bool IsNumber { get; }
+}
+
+public sealed class SMITrigger : SMIInput {
+    public void Fire();  // Calls native fireSMITriggerStateMachine()
+}
+
+public sealed class SMIBool : SMIInput {
+    public bool Value { get; set; }
+}
+
+public sealed class SMINumber : SMIInput {
+    public float Value { get; set; }
+}
+```
+
+#### Event Pattern (ReportedEvent.cs)
+- Uses object pooling for performance
+- Lazy-loads properties to avoid allocations
+- Properties are key-value pairs (string, float, bool)
+- Events have: Name, Type, SecondsDelay, Properties dictionary
+
+```csharp
+public class ReportedEvent : IDisposable {
+    public string Name { get; }
+    public ushort Type { get; }
+    public float SecondsDelay { get; }
+    public Dictionary<string, object> Properties { get; }
+}
+```
+
+#### DataBinding Pattern (DataBinding/*.cs)
+- `ViewModel.cs` - Schema definition
+- `ViewModelInstance.cs` - Runtime instance with values
+- `ViewModelInstanceProperty.cs` - Individual property accessors
+- Property types: String, Number, Boolean, Enum, Color, Trigger, List
+
+### Architectural Decisions Made
+
+#### Decision 1: RiveInput Type System
+**Current**: Single `RiveInput` class with `is_bool()`/`is_number()` checks.
+**Target**: Consider separate classes or extended input type support.
+
+**Options**:
+1. Add `is_trigger()` and `fire()` to existing RiveInput
+2. Create RiveInputTrigger subclass
+3. Create RiveTrigger as separate class
+
+**Recommendation**: Option 1 (least breaking change, matches rive-cpp pattern)
+
+#### Decision 2: Event Handling
+**Pattern**: Poll events after advance(), emit Godot signals.
+
+```gdscript
+# Proposed API
+signal rive_event(event_name: String, properties: Dictionary)
+
+# Internal implementation
+func _process(delta):
+    state_machine.advance(delta)
+    for i in range(state_machine.reported_event_count()):
+        var event = state_machine.reported_event_at(i)
+        emit_signal("rive_event", event.name, event.properties)
+```
+
+#### Decision 3: ViewModel Binding
+This is the most complex feature. Requires:
+1. RiveViewModel class (schema)
+2. RiveViewModelInstance class (runtime values)
+3. Property accessors by name/type
+4. Binding to artboard
+
+**Deferred to Milestone 5** - needs more research.
+
+---
+
+## Refined Roadmap
+
+### Milestone 1: Core Migration (Weeks 2-3)
+- [ ] Replace rive-cpp submodule with rive-runtime
+- [ ] Update all `#include` paths
+- [ ] Verify File/Artboard/StateMachine APIs still work
+- [ ] Build system updates for new library structure
+- [ ] Basic smoke test with existing demo
+
+### Milestone 2: Input & Triggers (Week 4)
+- [ ] Add SMITrigger support to RiveInput
+- [ ] Add `fire()` method for triggers
+- [ ] Add `is_trigger()` type check
+- [ ] Update demo to showcase triggers
+
+### Milestone 3: Rive Events (Week 5)
+- [ ] Create RiveEvent class
+- [ ] Add event polling after advance()
+- [ ] Emit `rive_event` signal
+- [ ] Document event properties access
+
+### Milestone 4: Rendering Upgrade (Weeks 6-8)
+- [ ] Research Godot RenderingDevice integration
+- [ ] Evaluate Skia GPU vs Rive Renderer
+- [ ] Implement GPU rendering path
+- [ ] Benchmark CPU vs GPU
+
+### Milestone 5: Data Binding (Weeks 9-11)
+- [ ] Implement RiveViewModel
+- [ ] Implement RiveViewModelInstance
+- [ ] Property type support
+- [ ] Artboard binding
+
+### Milestone 6: Scripting (Weeks 12-14)
+- [ ] Luau VM integration research
+- [ ] Script asset loading
+- [ ] Execution context
+- [ ] Error bridging
+
+### Milestone 7: Audio (Week 15)
+- [ ] Audio asset loader
+- [ ] AudioEngine integration
+- [ ] Godot AudioStreamPlayer bridge
+
+### Milestone 8: Polish (Weeks 16-18)
+- [ ] Comprehensive testing
+- [ ] Documentation
+- [ ] Cross-platform builds
+- [ ] Performance optimization
