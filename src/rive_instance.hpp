@@ -33,11 +33,13 @@ struct RiveInstance {
     friend class RiveViewerBase;
 
     ViewerProps *props;
+    const bool *initialized = nullptr;  // Points to RiveViewerBase::initialized
     Ref<RiveFile> file;
     rive::Mat2D current_transform;
 
-    void set_props(ViewerProps *props_value) {
+    void set_props(ViewerProps *props_value, const bool *initialized_flag = nullptr) {
         props = props_value;
+        initialized = initialized_flag;
         if (props) {
             props->on_path_changed([this](godot::String path) { on_path_changed(path); });
             props->on_artboard_changed([this](int index) { on_artboard_changed(index); });
@@ -46,6 +48,11 @@ struct RiveInstance {
             props->on_scene_properties_changed([this]() { on_scene_properties_changed(); });
             props->on_transform_changed([this]() { on_transform_changed(); });
         }
+    }
+
+    // Check if it's safe to create Ref<> objects (bindings are ready)
+    bool is_ready() const {
+        return initialized && *initialized;
     }
 
     rive::Mat2D get_transform() const {
@@ -134,6 +141,7 @@ struct RiveInstance {
 
    private:
     void on_path_changed(godot::String path) {
+        // Path changes don't create Ref<> objects, safe during loading
         if (exists(file)) unref(file);
         on_artboard_changed(-1);
         on_animation_changed(-1);
@@ -141,18 +149,26 @@ struct RiveInstance {
     }
 
     void on_artboard_changed(int index) {
+        // Guard: file->get_artboard() creates Ref<RiveArtboard>, unsafe during scene loading
+        if (!is_ready()) return;
         if (exists(file)) file->get_artboard(index);
     }
 
     void on_scene_changed(int index) {
+        // Guard: artboard() and get_scene() create Ref<> objects
+        if (!is_ready()) return;
         if (exists(artboard())) artboard()->get_scene(index);
     }
 
     void on_animation_changed(int index) {
+        // Guard: artboard() and get_animation() create Ref<> objects
+        if (!is_ready()) return;
         if (exists(artboard())) artboard()->get_animation(index);
     }
 
     void on_scene_properties_changed() {
+        // Guard: scene() creates Ref<RiveScene>
+        if (!is_ready()) return;
         auto sm = scene();
         if (exists(sm)) {
             auto scene_props = props->scene_properties();
@@ -165,6 +181,8 @@ struct RiveInstance {
     }
 
     void on_transform_changed() {
+        // Guard: artboard() creates Ref<RiveArtboard>
+        if (!is_ready()) return;
         current_transform = get_transform();
         if (exists(artboard())) artboard()->queue_redraw();
     }

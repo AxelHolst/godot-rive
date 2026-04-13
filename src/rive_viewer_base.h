@@ -51,6 +51,7 @@ class RiveViewerBase {
     RiveInstance inst;
     SkiaInstance sk;
     float elapsed = 0;
+    bool initialized = false;  // Guards against callbacks during scene loading
     Dictionary cached_scene_property_values;
     Ref<Image> image;
     Ref<ImageTexture> texture;

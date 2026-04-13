@@ -22,7 +22,7 @@ const Image::Format IMAGE_FORMAT = Image::Format::FORMAT_RGBA8;
 
 RiveViewerBase::RiveViewerBase(CanvasItem *owner) {
     this->owner = owner;
-    inst.set_props(&props);
+    inst.set_props(&props, &initialized);  // Pass initialized flag for callback guards
     sk.set_props(&props);
     props.on_artboard_changed([this](int index) { _on_artboard_changed(index); });
     props.on_scene_changed([this](int index) { _on_scene_changed(index); });
@@ -71,6 +71,7 @@ void RiveViewerBase::on_process(float delta) {
 }
 
 void RiveViewerBase::on_ready() {
+    initialized = true;  // Now safe to process callbacks that create Ref<> objects
     elapsed = 0.0;
     props.size(width(), height());
 }
@@ -206,6 +207,8 @@ void RiveViewerBase::_on_size_changed(float w, float h) {
 }
 
 void RiveViewerBase::_on_transform_changed() {
+    // Guard: frame() accesses artboard/scene which creates Ref<> objects
+    if (!initialized) return;
     if (sk.renderer) sk.renderer->transform(inst.current_transform);
     PackedByteArray bytes = frame(0.0);
     if (bytes.size()) {
