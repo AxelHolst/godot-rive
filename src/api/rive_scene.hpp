@@ -9,7 +9,7 @@
 #include <godot_cpp/variant/rect2.hpp>
 #include <godot_cpp/variant/vector2.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/animation/state_machine_bool.hpp>
 #include <rive/animation/state_machine_input_instance.hpp>
 #include <rive/animation/state_machine_instance.hpp>

@@ -23,7 +23,7 @@ struct SkiaInstance {
     ViewerProps *props;
     sk_sp<SkSurface> surface;
     Ptr<SkiaRenderer> renderer;
-    Ptr<SkiaFactory> factory = rivestd::make_unique<SkiaFactory>();
+    Ptr<SkiaFactory> factory = std::make_unique<SkiaFactory>();
 
     void set_props(ViewerProps *props_value) {
         props = props_value;
@@ -66,7 +66,7 @@ struct SkiaInstance {
    private:
     void on_transform_changed() {
         surface = SkSurface::MakeRaster(image_info());
-        renderer = rivestd::make_unique<SkiaRenderer>(surface->getCanvas());
+        renderer = std::make_unique<SkiaRenderer>(surface->getCanvas());
     }
 };
 

@@ -8,7 +8,7 @@
 #include <godot_cpp/variant/builtin_types.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/layout.hpp>
 
 using namespace godot;

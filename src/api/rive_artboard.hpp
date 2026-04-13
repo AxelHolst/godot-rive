@@ -11,7 +11,7 @@
 #include <godot_cpp/variant/typed_array.hpp>
 #include <godot_cpp/variant/vector2.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/animation/state_machine_instance.hpp>
 #include <rive/artboard.hpp>
 #include <rive/math/transform_components.hpp>

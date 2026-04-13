@@ -6,3 +6,6 @@
 *.os
 *.o
 .sconsign.dblite
+
+# Session-specific context (not for version control)
+CLAUDE.md

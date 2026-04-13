@@ -9,11 +9,12 @@
 #include <godot_cpp/variant/rect2.hpp>
 #include <godot_cpp/variant/vector2.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/animation/state_machine_bool.hpp>
 #include <rive/animation/state_machine_input_instance.hpp>
 #include <rive/animation/state_machine_instance.hpp>
 #include <rive/animation/state_machine_number.hpp>
+#include <rive/animation/state_machine_trigger.hpp>
 #include <rive/scene.hpp>
 
 using namespace godot;
@@ -38,6 +39,8 @@ class RiveInput : public Resource {
         ClassDB::bind_method(D_METHOD("get_default"), &RiveInput::get_default);
         ClassDB::bind_method(D_METHOD("is_bool"), &RiveInput::is_bool);
         ClassDB::bind_method(D_METHOD("is_number"), &RiveInput::is_number);
+        ClassDB::bind_method(D_METHOD("is_trigger"), &RiveInput::is_trigger);
+        ClassDB::bind_method(D_METHOD("fire"), &RiveInput::fire);
     }
 
     rive::SMIBool *bool_input() const {
@@ -47,6 +50,11 @@ class RiveInput : public Resource {
 
     rive::SMINumber *float_input() const {
         if (is_number()) return (rive::SMINumber *)input;
+        return nullptr;
+    }
+
+    rive::SMITrigger *trigger_input() const {
+        if (is_trigger()) return (rive::SMITrigger *)input;
         return nullptr;
     }
 
@@ -76,6 +84,7 @@ class RiveInput : public Resource {
     Variant::Type get_type() const {
         if (input && input->input()->is<rive::StateMachineBool>()) return Variant::Type::BOOL;
         if (input && input->input()->is<rive::StateMachineNumber>()) return Variant::Type::FLOAT;
+        if (input && input->input()->is<rive::StateMachineTrigger>()) return Variant::Type::NIL;  // Triggers have no value type
         return Variant::Type::NIL;
     }
 
@@ -104,13 +113,21 @@ class RiveInput : public Resource {
         return get_type() == Variant::Type::FLOAT;
     }
 
+    bool is_trigger() const {
+        return input && input->input()->is<rive::StateMachineTrigger>();
+    }
+
+    void fire() {
+        if (auto t = trigger_input()) t->fire();
+    }
+
     /* Overrides */
 
     String _to_string() const {
         Dictionary format_args;
         format_args["cls"] = get_class_static();
         format_args["name"] = get_name();
-        format_args["type"] = get_type() == Variant::Type::BOOL ? "bool" : "float";
+        format_args["type"] = is_bool() ? "bool" : (is_number() ? "float" : (is_trigger() ? "trigger" : "unknown"));
         return String("{cls}({type} {name})").format(format_args);
     }
 

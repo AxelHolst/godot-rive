@@ -9,7 +9,7 @@
 #include <godot_cpp/core/binder_common.hpp>
 #include <godot_cpp/core/class_db.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/animation/linear_animation.hpp>
 #include <rive/animation/linear_animation_instance.hpp>
 

@@ -18,7 +18,7 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/builtin_types.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/animation/state_machine_instance.hpp>
 #include <rive/file.hpp>
 
