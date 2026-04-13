@@ -281,3 +281,223 @@ This is the most complex feature. Requires:
 - [ ] Documentation
 - [ ] Cross-platform builds
 - [ ] Performance optimization
+
+---
+
+## 2026-04-13: Build System Investigation
+
+### Attempted Build from Source
+
+#### Environment
+- macOS x86_64 (Intel Core i9)
+- Xcode Command Line Tools (no full Xcode installation)
+- Homebrew-installed: cmake, premake5, ninja, scons, python3
+
+#### Issues Discovered
+
+##### 1. Missing C++ Standard Library Headers
+The Command Line Tools installation has a broken/incomplete configuration where clang cannot find standard C++ headers (`<atomic>`, `<functional>`, `<cmath>`) when using `-isysroot`.
+
+**Workaround**: Manually add `-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1` to compiler flags.
+
+##### 2. Skia Build Success
+Successfully built Skia with the following configuration:
+- Location: `thirdparty/rive-cpp/skia/dependencies/skia_rive_optimized/out/macosx/x64/libskia.a`
+- Size: 28MB
+- Target: macOS 11.0, x64
+
+##### 3. rive-cpp Build System Incomplete
+The rive-cpp submodule (commit `7da35c1f`, Feb 2024) is missing critical build infrastructure files:
+- `rive_build_config.lua` - Workspace configuration
+- `setup_compiler.lua` - Compiler settings
+- `dependency.lua` - Dependency management
+
+These files exist in the newer `rive-runtime` repository but are incompatible with the older `rive-cpp` premake files.
+
+##### 4. Premake Version Incompatibility
+- rive-cpp build scripts expect premake5 options like `--with_rive_text` and `--with_rive_audio=system`
+- rive-runtime uses different options like `--config=debug` and `--with_rive_layout`
+- The options are defined in the Lua config files, not in premake5 itself
+
+#### Current State
+- [x] Skia built successfully
+- [ ] librive.a - Not built (missing build infrastructure)
+- [ ] librive_skia_renderer.a - Not built
+- [ ] librive_harfbuzz.a - Not built
+- [ ] librive_sheenbidi.a - Not built
+
+### Recommended Path Forward
+
+The rive-cpp build system is fundamentally broken/incomplete in this commit. Two options:
+
+**Option A: Full rive-runtime Migration (Recommended)**
+1. Replace `thirdparty/rive-cpp` with `rive-runtime`
+2. Update SConstruct paths and library names
+3. Update C++ source includes
+4. This aligns with Rive's official direction
+
+**Option B: Patch rive-cpp Build System**
+1. Copy missing Lua files from rive-runtime
+2. Adapt them for rive-cpp's older premake5_v2.lua format
+3. Manually download/build harfbuzz, sheenbidi dependencies
+4. Higher effort, maintains deprecated dependency
+
+### Files Modified Today
+- `build/rive_build_config.lua` - Copied from rive-runtime
+- `build/setup_compiler.lua` - Copied from rive-runtime
+- `build/dependency.lua` - Copied from rive-runtime
+- `build/premake5.lua` - Created wrapper
+
+### Build Artifacts
+```
+thirdparty/rive-cpp/
+├── skia/dependencies/
+│   ├── skia/out/static/libskia.a  # Symlink to built Skia
+│   └── skia_rive_optimized/out/macosx/x64/libskia.a  # Actual build (28MB)
+└── build/  # Directory created for premake, contains Lua configs
+```
+
+---
+
+## 2026-04-13: rive-runtime Migration Complete (Strategy B)
+
+### Decision
+Chose **Option A: Full rive-runtime Migration** as recommended.
+
+### Submodule Swap
+```bash
+git rm thirdparty/rive-cpp
+git submodule add https://github.com/rive-app/rive-runtime.git thirdparty/rive-runtime
+```
+
+### Pre-Compiled Libraries Built
+All libraries successfully built in `thirdparty/rive-runtime/`:
+
+| Library | Size | Location |
+|---------|------|----------|
+| `libskia.a` | 29MB | `skia/dependencies/skia/out/macosx/x64/` |
+| `librive.a` | 604MB | `out/debug/` |
+| `librive_skia_renderer.a` | 1MB | `skia/renderer/out/debug/` |
+| `librive_harfbuzz.a` | 74MB | `out/debug/` |
+| `librive_sheenbidi.a` | 244KB | `out/debug/` |
+| `librive_yoga.a` | 1.9MB | `out/debug/` |
+
+### API Changes Required
+
+#### 1. RiveFile (rive_file.hpp, read_rive_file.hpp)
+```cpp
+// OLD: std::unique_ptr (Ptr<T> alias)
+Ptr<rive::File> file;
+
+// NEW: Reference-counted pointer
+rcp<rive::File> file;
+```
+
+#### 2. RiveInput (rive_input.hpp)
+Added trigger support:
+```cpp
+#include <rive/animation/state_machine_trigger.hpp>
+
+bool is_trigger() const {
+    return input && input->input()->is<rive::StateMachineTrigger>();
+}
+
+void fire() {
+    if (auto t = trigger_input()) t->fire();
+}
+```
+
+#### 3. RiveListener (rive_listener.hpp)
+The `listenerType()` method was removed in rive-runtime:
+```cpp
+// OLD (broken)
+return listener->listenerType();
+
+// NEW: Use hasListener() to detect type
+if (listener->hasListener(rive::ListenerType::enter)) return (int)rive::ListenerType::enter;
+if (listener->hasListener(rive::ListenerType::exit)) return (int)rive::ListenerType::exit;
+// ... etc
+```
+
+#### 4. SkiaInstance (skia_instance.hpp)
+```cpp
+// OLD: rivestd namespace removed
+Ptr<SkiaFactory> factory = rivestd::make_unique<SkiaFactory>();
+
+// NEW: Use std::make_unique directly
+Ptr<SkiaFactory> factory = std::make_unique<SkiaFactory>();
+```
+
+### SConstruct Updates
+- Added `librive_yoga.a` to library list
+- Updated all include paths for rive-runtime structure
+- C++ header workaround baked in at line 45
+
+### Build Success
+```
+scons platform=macos target=template_debug arch=x86_64
+```
+
+**Output:** `demo/bin/librive.macos.template_debug.framework/librive.macos.template_debug` (13MB)
+
+**Commit:** `d624027` - feat(api): migrate to rive-runtime API
+
+### Next Steps
+- [x] Smoke test in Godot 4.6.2 - **CRASH** (see below)
+- [ ] Build release configuration
+- [ ] Test trigger/event functionality
+
+---
+
+## 2026-04-13: Smoke Test Crash (Signal 11)
+
+### Symptoms
+- GDExtension loaded successfully
+- `.riv` files imported correctly: `Successfully imported <res://examples/joystick.riv>!`
+- Crash occurs during editor layout restoration (loading saved scene with RiveViewer)
+
+### Error Output
+```
+ERROR: Condition "_instance_bindings != nullptr && _instance_bindings[0].binding != nullptr" is true.
+   at: set_instance_binding (core/object/object.cpp:2241)
+
+handle_crash: Program crashed with signal 11
+```
+
+### Backtrace (Key Frames)
+```
+[6] RiveViewerBase::move_mouse(godot::Vector2)
+[7] RiveViewer::_gde_binding_reference_callback(void*, void*, unsigned char)
+[8] RiveViewerBase::on_set(godot::StringName const&, godot::Variant const&)
+[9] RiveViewer::set_bind(void*, void const*, void const*)
+[10] Object::set(StringName const&, Variant const&, bool*)
+[11] SceneState::instantiate(SceneState::GenEditState)
+```
+
+### Analysis
+The crash occurs in `RiveViewerBase::on_set()` → `move_mouse()` during property initialization.
+This suggests a null pointer dereference - likely accessing uninitialized Rive objects
+(scene, artboard, or file) before they're properly loaded.
+
+### Root Cause Analysis
+The crash was NOT in `move_mouse()` itself - the backtrace was misleading. The actual cause:
+
+1. During `SceneState::instantiate()`, Godot restores saved properties via `_set()`
+2. `on_set()` calls `inst.instantiate()` at line 168
+3. `instantiate()` creates `Ref<RiveScene>`, `Ref<RiveArtboard>` objects
+4. Creating these `Ref<>` objects triggers `_gde_binding_reference_callback`
+5. **Godot's binding system isn't fully initialized during scene loading**
+6. This causes the crash in `set_instance_binding()`
+
+### Fix Applied (rive_viewer_base.cpp:168)
+```cpp
+// Guard: Don't instantiate Rive objects until the owner node is fully ready.
+// During scene loading, Godot's binding system isn't ready and creating Ref<>
+// objects would trigger _gde_binding_reference_callback on invalid bindings.
+if (!owner->is_node_ready()) return false;
+inst.instantiate();
+```
+
+### Rebuild Status
+- Rebuilt successfully after fix
+- Awaiting smoke test verification

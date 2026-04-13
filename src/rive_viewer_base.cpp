@@ -165,6 +165,10 @@ bool RiveViewerBase::on_set(const StringName &prop, const Variant &value) {
         props.animation((int)value);
         return true;
     }
+    // Guard: Don't instantiate Rive objects until the owner node is fully ready.
+    // During scene loading, Godot's binding system isn't ready and creating Ref<>
+    // objects would trigger _gde_binding_reference_callback on invalid bindings.
+    if (!owner->is_node_ready()) return false;
     inst.instantiate();
     if (exists(inst.scene()) && inst.scene()->get_input_names().has(name)) {
         props.scene_property(name, value);
