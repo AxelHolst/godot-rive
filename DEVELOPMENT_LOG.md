@@ -574,3 +574,52 @@ size updates before initialization. Changed to always sync size from Control on 
 - Godot test: 40000/40000 non-transparent pixels rendered (200x200)
 - Rive animations are now visible in Godot!
 
+---
+
+## 2026-04-14: Repository Stabilization & Workspace Audit
+
+### Context
+After the RIVE_OPTIMIZED fix, the workspace had accumulated uncommitted changes. Performed a full audit and organized into atomic commits.
+
+### Audit Categories
+
+#### Category 1: Source Code Fixes (Critical)
+- `src/rive_instance.hpp`: Added `is_ready()` guard in `on_path_changed()` to prevent crashes during scene loading
+- `src/utils/read_rive_file.hpp`: Changed to explicit `rive::` namespace prefixes
+- `src/viewer_props.hpp`: Minor code cleanup
+
+#### Category 2: Submodule Fixes (Critical)
+- `godot-cpp/tools/macos.py`: Added C++ header include path for Intel Macs
+- `thirdparty/rive-runtime/build/rive_build_config.lua`: Same fix for rive-runtime builds
+
+#### Category 3: Demo/Test Infrastructure
+- Added `test_minimal.tscn`, `test_ghost.tscn`, `test_no_file.tscn`, `test_with_file.tscn`
+- Updated `project.godot` for Godot 4.6
+- Updated `.gitignore` to exclude `demo/bin/` and `*.uid` files
+- Removed tracked binaries from version control
+
+#### Category 4: Documentation
+- Added `docs/API_MIGRATION.md` for rive-cpp → rive-runtime migration guide
+
+### Commits Made
+```
+b3826c8 chore: remove built binaries from version control
+d5d08ca chore(demo): update Godot import files for 4.6
+eef3c85 chore(deps): update rive-runtime with macOS header fix
+4991b8f chore(deps): update godot-cpp with macOS header fix
+99e7558 docs: add API migration guide for rive-cpp to rive-runtime
+77e0437 feat(demo): add test scenes and update to Godot 4.6
+c117372 chore: update gitignore for build artifacts and UIDs
+167df76 fix(core): add binding safety guards and namespace hygiene
+a41317b fix(skia): resolve canvas crash by removing RIVE_OPTIMIZED flag
+```
+
+### Current State
+- **Editor**: Opens without crash ✅
+- **Runtime**: Animations render and play ✅
+- **Vector scaling**: Works correctly ✅
+- **Repository**: Clean, all changes committed ✅
+
+### Remaining Submodule Notes
+The `thirdparty/rive-runtime` submodule shows "modified content, untracked content" in git status. This is expected - those are local build artifacts (`out/`, `dependencies/`) that are not committed to the submodule. This is the correct behavior.
+
