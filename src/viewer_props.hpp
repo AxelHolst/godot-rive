@@ -90,8 +90,7 @@ struct PropEvent {
 
     void emit(Args... args) const {
         for (int i = 0; i < listeners.size(); i++) {
-            auto listener = listeners[i];
-            listener(args...);
+            listeners[i](args...);
         }
     }
 };

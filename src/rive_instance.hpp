@@ -34,6 +34,8 @@ struct RiveInstance {
 
     ViewerProps *props;
     const bool *initialized = nullptr;  // Points to RiveViewerBase::initialized
+    // Using Ref<RiveFile> - this is safe as long as we don't assign to it
+    // until after bindings are ready (in deferred_init)
     Ref<RiveFile> file;
     rive::Mat2D current_transform;
 
@@ -85,7 +87,7 @@ struct RiveInstance {
         if (exists(sm)) return sm->scene->advanceAndApply(delta);
         else if (exists(anim)) return anim->animation->advanceAndApply(delta);
         else if (exists(ab)) return ab->artboard->advance(delta);
-        else return false;
+        return false;
     }
 
     void press_mouse(godot::Vector2 position) {
@@ -141,7 +143,8 @@ struct RiveInstance {
 
    private:
     void on_path_changed(godot::String path) {
-        // Path changes don't create Ref<> objects, safe during loading
+        // Guard: Don't unref during scene loading when bindings aren't ready
+        if (!is_ready()) return;
         if (exists(file)) unref(file);
         on_artboard_changed(-1);
         on_animation_changed(-1);
@@ -184,7 +187,6 @@ struct RiveInstance {
         // Guard: artboard() creates Ref<RiveArtboard>
         if (!is_ready()) return;
         current_transform = get_transform();
-        if (exists(artboard())) artboard()->queue_redraw();
     }
 };
 
