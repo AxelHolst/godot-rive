@@ -501,3 +501,76 @@ inst.instantiate();
 ### Rebuild Status
 - Rebuilt successfully after fix
 - Awaiting smoke test verification
+
+---
+
+## 2026-04-14: RIVE_OPTIMIZED Flag Causing SkCanvas Crash - FIXED
+
+### Symptoms
+- `canvas->save()` crashed with SIGSEGV at address 0x58
+- SkCanvas was created but internal `fMCRec` pointer was NULL
+- Crash occurred in `incl 0x58(%rcx)` when trying to increment `fMCRec->fDeferredSaveCount`
+
+### Root Cause
+The `-DRIVE_OPTIMIZED` flag in Skia's `args.gn` causes SkCanvas constructors to be **stubbed out**:
+
+```cpp
+#ifdef RIVE_OPTIMIZED
+SkCanvas::SkCanvas(const SkBitmap& bitmap, ...)
+    : fMCStack(...) {}  // Empty! No init() call!
+#else
+SkCanvas::SkCanvas(const SkBitmap& bitmap, ...)
+    : fMCStack(...) {
+    this->init(device);  // This sets up fMCRec
+}
+#endif
+```
+
+Without `init()`, the `fMCRec` pointer remains NULL, causing crashes on any canvas operation.
+
+### Fix Applied (thirdparty/rive-runtime/skia/dependencies/skia/out/macosx/x64/args.gn)
+Removed `-DRIVE_OPTIMIZED` from `extra_cflags`:
+```gn
+extra_cflags = [
+  "--target=x86_64-apple-macos10.12",
+  "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
+  "-fexceptions",
+  "-frtti",
+  # NOTE: RIVE_OPTIMIZED intentionally NOT set - stubs out SkCanvas constructors!
+]
+```
+
+### Additional Fixes Required
+
+1. **Rebuild Skia** without RIVE_OPTIMIZED:
+   ```bash
+   cd thirdparty/rive-runtime/skia/dependencies/skia
+   ./bin/gn gen out/macosx/x64 --args='...'
+   ninja -C out/macosx/x64
+   ```
+
+2. **Rebuild rive-runtime with RTTI** (for ABI compatibility):
+   ```bash
+   cd thirdparty/rive-runtime
+   ./build/build_rive.sh debug --with-rtti
+   ```
+
+3. **Rebuild skia renderer with RTTI**:
+   ```bash
+   cd thirdparty/rive-runtime/skia/renderer
+   RIVE_PREMAKE_ARGS="--with-rtti" ../../build/build_rive.sh clean debug
+   ```
+
+4. **SConstruct changes** (build/SConstruct):
+   - Added `-frtti` to CXXFLAGS for ABI compatibility
+   - Removed `-Wl,-S`, `-Wl,-x` strip flags that were hiding Skia symbols
+
+### Size Change Fix
+Also fixed: RiveViewer size was stuck at 1x1 because `set_size()` had a guard preventing 
+size updates before initialization. Changed to always sync size from Control on every process frame.
+
+### Verification
+- Standalone Skia test: `canvas->save()` returns successfully
+- Godot test: 40000/40000 non-transparent pixels rendered (200x200)
+- Rive animations are now visible in Godot!
+

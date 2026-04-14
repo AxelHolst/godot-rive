@@ -23,6 +23,8 @@ class RiveViewer : public Control {
         switch (what) {
             case NOTIFICATION_INTERNAL_PROCESS:
             case NOTIFICATION_PROCESS:
+                // Always sync size from the Control to props - handles layout changes
+                base.set_size(get_size());
                 base.on_process(get_process_delta_time());
                 break;
             case NOTIFICATION_RESIZED:
