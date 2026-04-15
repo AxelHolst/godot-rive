@@ -2,16 +2,18 @@
 
 This document describes the technical architecture of the godot-rive GDExtension.
 
+**Last Updated**: April 15, 2026 (Post-Migration to rive-runtime)
+
 ---
 
 ## Overview
 
-godot-rive is a GDExtension that integrates the [Rive](https://rive.app) animation runtime into Godot 4.3+. It provides Godot nodes and resources that wrap the native `rive-runtime` C++ library.
+godot-rive is a GDExtension that integrates the [Rive](https://rive.app) animation runtime into Godot 4.6+. It provides Godot nodes and resources that wrap the native `rive-runtime` C++ library.
 
-## Current Architecture (Pre-Migration)
+## Current Architecture (Post-Migration)
 
-> **Note**: This section describes the architecture inherited from kibble-cabal/godot-rive.
-> It will be updated as we migrate to rive-runtime.
+> **Status**: Migration from `rive-cpp` to `rive-runtime` is complete.
+> The extension compiles and renders Rive animations in Godot.
 
 ### Layer Diagram
 
@@ -130,56 +132,108 @@ godot-rive/
 │   ├── SConstruct               # SCons configuration
 │   └── SConscript.common        # Common build utilities
 ├── thirdparty/
-│   └── rive-cpp/                # (To be replaced with rive-runtime)
+│   └── rive-runtime/            # Rive C++ runtime (migrated from rive-cpp)
 ├── godot-cpp/                   # Godot C++ bindings submodule
 └── demo/                        # Example Godot project
 ```
 
 ---
 
-## Target Architecture (Post-Migration)
+## Feature Gap vs rive-unity (Research April 2026)
 
-### Goals
+Based on detailed comparison with `rive-unity`, the following gaps were identified:
+
+### Currently Implemented ✅
+
+| Feature | Implementation |
+|---------|---------------|
+| File loading | `RiveFile::Load()` → `rcp<rive::File>` |
+| Artboard rendering | CPU Skia via `SkiaRenderer` |
+| State machine advance | `scene->advanceAndApply(delta)` |
+| Bool/Number inputs | `RiveInput` with `set_value(Variant)` |
+| Trigger inputs | `RiveInput::fire()` method |
+| Mouse interaction | `pointerMove/Down/Up` via `RiveScene` |
+| Fit/Alignment | `rive::computeAlignment()` |
+
+### Missing Features (Prioritized) 🔴
+
+| Feature | rive-unity Reference | rive-runtime API | Priority |
+|---------|---------------------|------------------|----------|
+| **Rive Events** | `StateMachine.ReportedEvents()` | `reportedEventCount()` / `reportedEventAt()` | M3 |
+| **Event Signals** | Callback delegates | N/A (custom implementation) | M3 |
+| **Nested Input Paths** | `Artboard.*AtPath()` methods | `getSMIInputAtPathArtboard()` (native) | M3 |
+| **ViewModel** | `ViewModelInstance` (800+ LOC) | `ViewModelInstance::propertyValue()` | M6 |
+| **Data Binding** | `BindViewModelInstance()` | `bindViewModelInstanceToStateMachine()` | M6 |
+| **Luau Scripting** | `WITH_RIVE_TOOLS` flag | `rive_luau.hpp` | M7 |
+| **Audio** | `AudioEngine` class | `rive/audio/` headers | M8 |
+
+---
+
+## Planned Architecture Changes
+
+### M3: Event System
+
+```
+New class: RiveEvent (Resource)
+├── name: String                    # event->name()
+├── type: int                       # event type enum
+├── seconds_delay: float            # EventReport::secondsDelay()
+└── properties: Dictionary          # custom properties
+
+Modified: RiveViewerBase
+├── signal rive_event(event: RiveEvent)
+└── poll_events() in advance loop:
+    for i in range(scene->reportedEventCount()):
+        emit_signal("rive_event", RiveEvent::from_report(scene->reportedEventAt(i)))
+```
+
+### M3: Nested Artboard Inputs
+
+```
+Modified: RiveArtboard
+├── set_bool_at_path(name: String, value: bool, path: String)
+├── set_number_at_path(name: String, value: float, path: String)
+├── fire_trigger_at_path(name: String, path: String)
+└── get_input_at_path(name: String, path: String) -> RiveInput
+```
+
+### M6: ViewModel System
+
+```
+New class: RiveViewModel (Resource)
+├── name: String
+├── property_names: PackedStringArray
+└── create_instance() -> RiveViewModelInstance
+
+New class: RiveViewModelInstance (RefCounted)
+├── get_property(path: String) -> Variant
+├── set_property(path: String, value: Variant)
+├── bind_to_artboard(artboard: RiveArtboard)
+└── bind_to_scene(scene: RiveScene)
+```
+
+---
+
+## Target Architecture Goals
 
 1. **Full Feature Parity with rive-unity**
-   - ViewModel / Data Binding
-   - Rive Events
-   - Trigger inputs
-   - Scripting (Luau)
-   - Audio
+   - ✅ Trigger inputs (implemented)
+   - 🔲 Rive Events (M3)
+   - 🔲 Nested artboard inputs (M3)
+   - 🔲 ViewModel / Data Binding (M6)
+   - 🔲 Scripting (Luau) (M7)
+   - 🔲 Audio (M8)
 
-2. **GPU-Accelerated Rendering**
+2. **GPU-Accelerated Rendering** (M5)
    - Option 1: Skia GPU backend
    - Option 2: Rive Renderer → Godot RenderingDevice
    - Fallback: CPU rendering for compatibility
 
-3. **Cross-Platform Support**
-   - Linux x86_64 (primary)
-   - macOS x86_64 / ARM64
-   - Windows x86_64
-
-### Proposed Class Additions
-
-```
-Resource (new classes)
-├── RiveViewModel       # Data binding context
-├── RiveEvent           # Rive event data
-└── RiveTrigger         # Trigger input (separate from RiveInput?)
-
-OR extend RiveInput to support:
-├── RiveInputBool
-├── RiveInputNumber
-└── RiveInputTrigger
-```
-
-### Proposed Signals
-
-```gdscript
-# RiveViewer / RiveViewer2D
-signal rive_event_received(event: RiveEvent)
-signal state_changed(state_machine: RiveScene, state_name: String)
-signal viewmodel_property_changed(property: String, value: Variant)
-```
+3. **Cross-Platform Support** (M4)
+   - ✅ macOS x86_64
+   - 🔲 Linux x86_64 (priority)
+   - 🔲 macOS ARM64
+   - 🔲 Windows x86_64
 
 ---
 

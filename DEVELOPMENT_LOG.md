@@ -623,3 +623,119 @@ a41317b fix(skia): resolve canvas crash by removing RIVE_OPTIMIZED flag
 ### Remaining Submodule Notes
 The `thirdparty/rive-runtime` submodule shows "modified content, untracked content" in git status. This is expected - those are local build artifacts (`out/`, `dependencies/`) that are not committed to the submodule. This is the correct behavior.
 
+---
+
+## 2026-04-15: Deep Research Phase - rive-unity Comparison
+
+### Objective
+Compare godot-rive architecture with rive-unity to identify feature gaps and establish a production-quality roadmap.
+
+### Research Sources
+| Repository | Location | Purpose |
+|------------|----------|---------|
+| `rive-runtime` | `~/Documents/GitHub/rive-research/rive-runtime/` | C++ runtime API reference |
+| `rive-unity` | `~/Documents/GitHub/rive-research/rive-unity/` | Architecture patterns, feature parity target |
+
+### Key Unity Files Analyzed
+- `package/Runtime/StateMachine.cs` (350 lines) - Event polling, input access patterns
+- `package/Runtime/Artboard.cs` (570 lines) - Nested input paths, text runs
+- `package/Runtime/SMIInput.cs` (154 lines) - Input type hierarchy
+- `package/Runtime/ReportedEvent.cs` (370 lines) - Event class with object pooling
+- `package/Runtime/DataBinding/ViewModelInstance.cs` (800+ lines) - Full data binding system
+
+### Feature Gap Analysis
+
+#### What We Have ✅
+| Feature | Status | Implementation |
+|---------|--------|----------------|
+| File loading | ✅ | `RiveFile::Load()` → `rcp<rive::File>` |
+| Artboard rendering | ✅ | CPU Skia via `SkiaRenderer` |
+| State machine | ✅ | `scene->advanceAndApply(delta)` |
+| Bool inputs | ✅ | `RiveInput::set_value(bool)` |
+| Number inputs | ✅ | `RiveInput::set_value(float)` |
+| Trigger inputs | ✅ | `RiveInput::fire()` |
+| Mouse interaction | ✅ | `pointerMove/Down/Up` |
+
+#### What We're Missing 🔴
+| Feature | rive-unity Reference | Gap Severity |
+|---------|---------------------|--------------|
+| **Rive Events** | `StateMachine.ReportedEvents()` with pooling | Critical |
+| **Nested Input Paths** | `Artboard.SetBooleanInputStateAtPath()` | Critical |
+| **ViewModel** | `ViewModelInstance` (800+ lines) | Critical |
+| **Data Binding** | `BindViewModelInstance()` | Critical |
+| **Luau Scripting** | `WITH_RIVE_TOOLS` compilation flag | High |
+| **Audio** | `AudioEngine` class | Medium |
+
+### Architectural Differences
+
+#### Memory Management
+**rive-unity**: Native pointer + IDisposable pattern
+```csharp
+public class StateMachine : IDisposable {
+    private readonly IntPtr m_nativeStateMachine;
+    public void Dispose() => unrefStateMachine(m_nativeStateMachine);
+}
+```
+
+**godot-rive**: Godot Ref<> + std::unique_ptr mixing
+```cpp
+class RiveScene : public Resource {
+    Ptr<rive::StateMachineInstance> scene;  // unique_ptr inside Ref<>
+};
+```
+
+This mixing caused our scene loading crash - bindings callbacks triggered on partially-initialized objects.
+
+#### Event System
+**rive-unity**: Full event polling with object pooling
+```csharp
+// StateMachine.cs:228
+public List<ReportedEvent> ReportedEvents() {
+    uint count = getReportedEventCount(m_nativeStateMachine);
+    for (uint i = 0; i < count; i++) {
+        list.Add(ReportedEvent.GetPooled(...));  // Pooled!
+    }
+}
+```
+
+**godot-rive**: No event support at all. The rive-runtime API is available:
+```cpp
+// rive/animation/state_machine_instance.hpp
+std::size_t reportedEventCount() const;
+const EventReport reportedEventAt(std::size_t index) const;
+```
+
+#### Nested Artboard Inputs
+**rive-unity**: Full path-based input navigation
+```csharp
+// Artboard.cs:309
+public void SetBooleanInputStateAtPath(string inputName, bool value, string path);
+public void FireInputStateAtPath(string inputName, string path);
+```
+
+**godot-rive**: Only top-level inputs supported.
+
+### Revised Roadmap
+
+| Milestone | Status | Description |
+|-----------|--------|-------------|
+| M1: Core Migration | ✅ Complete | rive-cpp → rive-runtime |
+| M2: Smoke Test | ✅ Complete | Rendering verified |
+| **M3: Events & Triggers** | 🔄 Next | `RiveEvent` class, signals, nested paths |
+| **M4: Linux Build** | ⏳ Pending | Cross-platform priority |
+| **M5: GPU Rendering** | ⏳ Pending | RenderingDevice or Rive Renderer |
+| **M6: ViewModel/Binding** | ⏳ Pending | Unity parity for data-driven animations |
+| **M7: Rive Scripting** | ⏳ Pending | Luau VM integration |
+| **M8: Polish & Release** | ⏳ Pending | Documentation, 1.0 stability |
+
+### Documentation Updated
+- `CLAUDE.md` - Revised with research findings and new roadmap
+- `ARCHITECTURE.md` - Updated with feature gap analysis and planned changes
+- `DEVELOPMENT_LOG.md` - This entry
+
+### Next Steps
+1. Implement `RiveEvent` class with properties
+2. Add `rive_event` signal to RiveViewer
+3. Add event polling in advance loop
+4. Implement nested input path methods on RiveArtboard
+

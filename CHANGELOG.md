@@ -8,21 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Trigger input API** - `RiveInput::is_trigger()` and `RiveInput::fire()` methods (untested)
 - Project governance files (CHANGELOG.md, DEVELOPMENT_LOG.md, ARCHITECTURE.md)
 - Established `develop` branch for ongoing development
+- Test scenes for debugging (test_minimal.tscn, test_ghost.tscn, etc.)
+- Comprehensive API migration guide (docs/API_MIGRATION.md)
 
 ### Changed
+- **BREAKING: Migrated from `rive-cpp` to `rive-runtime`** - Complete rewrite of native bindings
 - Forked from [kibble-cabal/godot-rive](https://github.com/kibble-cabal/godot-rive)
-- Repository now targets production-ready status with full rive-runtime feature support
+- Updated for Godot 4.6.2 compatibility
+- `rive::File` now uses `rcp<>` (reference-counted) instead of `unique_ptr`
+- `RiveListener::get_type()` now uses `hasListener()` checks instead of removed `listenerType()`
 
-### Planned
-- Migration from deprecated `rive-cpp` to modern `rive-runtime`
-- Data Binding / ViewModel support
-- Rive Events system
-- Trigger inputs
-- Luau scripting integration
-- Audio system
-- GPU-accelerated rendering pipeline
+### Fixed
+- **Scene loading crash** - Added deferred initialization to prevent binding callbacks during scene load
+- **SkCanvas crash** - Removed `-DRIVE_OPTIMIZED` flag that stubbed out Skia constructors
+- **macOS build** - Added C++ header workaround for Command Line Tools
+
+### Needs Testing
+- [ ] Trigger inputs (`RiveInput::fire()`)
+- [ ] State machine input changes via inspector
+- [ ] Mouse interactions (joystick.riv)
+
+### Planned (Roadmap)
+- **M3: Rive Events** - Event polling and signals
+- **M3: Nested Input Paths** - Control inputs in nested artboards
+- **M4: Linux Build** - Cross-platform deployment
+- **M5: GPU Rendering** - RenderingDevice or Rive Renderer integration
+- **M6: ViewModel/Data Binding** - Unity parity for data-driven animations
+- **M7: Luau Scripting** - Script execution inside Rive files
+- **M8: Audio** - Rive audio → Godot AudioStreamPlayer bridge
 
 ---
 
