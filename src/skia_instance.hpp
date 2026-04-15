@@ -8,6 +8,7 @@
 #include <skia/dependencies/skia/include/core/SkBitmap.h>
 #include <skia/dependencies/skia/include/core/SkCanvas.h>
 #include <skia/dependencies/skia/include/core/SkSurface.h>
+#include <memory>
 
 #include <skia/renderer/include/skia_factory.hpp>
 #include <skia/renderer/include/skia_renderer.hpp>
@@ -17,13 +18,13 @@
 #include "viewer_props.hpp"
 
 using namespace godot;
-using namespace rive;
 
 struct SkiaInstance {
     ViewerProps *props;
-    sk_sp<SkSurface> surface;
-    Ptr<SkiaRenderer> renderer;
-    Ptr<SkiaFactory> factory = rivestd::make_unique<SkiaFactory>();
+    SkBitmap bitmap;
+    std::unique_ptr<SkCanvas> canvas;
+    // Note: Factory is now a global singleton (see rive_global.hpp)
+    // Do NOT create per-instance factories - this causes memory corruption
 
     void set_props(ViewerProps *props_value) {
         props = props_value;
@@ -33,40 +34,48 @@ struct SkiaInstance {
     }
 
     SkImageInfo image_info() const {
-        return SkImageInfo::Make(
+        // Use N32Premul format like rive-runtime examples
+        return SkImageInfo::MakeN32Premul(
             props ? props->width() : 1,
-            props ? props->height() : 1,
-            SkColorType::kRGBA_8888_SkColorType,
-            SkAlphaType::kUnpremul_SkAlphaType
+            props ? props->height() : 1
         );
     }
 
+    SkCanvas* getCanvas() {
+        return canvas ? canvas.get() : nullptr;
+    }
+
     PackedByteArray bytes() const {
-        SkPixmap pixmap;
         PackedByteArray bytes;
-        if (!surface) return bytes;
-        if (!surface->peekPixels(&pixmap)) return bytes;
-        SkImageInfo info = surface->imageInfo();
-        size_t bytes_per_pixel = info.bytesPerPixel(), row_bytes = pixmap.rowBytes();
+        if (!canvas || bitmap.isNull()) return bytes;
+        SkImageInfo info = bitmap.info();
+        size_t bytes_per_pixel = info.bytesPerPixel();
+        size_t row_bytes = bitmap.rowBytes();
         bytes.resize(row_bytes * info.height());
         for (int y = 0; y < info.height(); y++) {
             for (int x = 0; x < info.width(); x++) {
                 int offset = y * row_bytes + x * bytes_per_pixel;
-                auto addr = pixmap.addr32(x, y);
+                auto addr = bitmap.getAddr32(x, y);
                 bytes.encode_u32(offset, *addr);
             }
         }
         return bytes;
     }
 
-    void clear() {
-        if (surface && renderer) surface->getCanvas()->clear(SkColors::kTransparent);
-    }
-
    private:
     void on_transform_changed() {
-        surface = SkSurface::MakeRaster(image_info());
-        renderer = rivestd::make_unique<SkiaRenderer>(surface->getCanvas());
+        // Recreate bitmap and canvas when size changes
+        int w = props ? props->width() : 1;
+        int h = props ? props->height() : 1;
+
+        // Allocate bitmap
+        SkImageInfo info = SkImageInfo::MakeN32Premul(w, h);
+        if (!bitmap.tryAllocPixels(info)) {
+            return;
+        }
+
+        // Create canvas directly from bitmap
+        canvas = std::make_unique<SkCanvas>(bitmap);
     }
 };
 

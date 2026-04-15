@@ -21,9 +21,8 @@
 #include "utils/types.hpp"
 
 using namespace godot;
-using namespace rive;
 
-static Ptr<File> read_rive_file(String path, Factory *factory) {
+static rive::rcp<rive::File> read_rive_file(String path, rive::Factory *factory) {
     CerrRedirect errs = CerrRedirect();
     try {
         if (path.get_extension().to_lower() != "riv") throw RiveException("No .riv path provided.").no_report();
@@ -32,11 +31,11 @@ static Ptr<File> read_rive_file(String path, Factory *factory) {
         PackedByteArray _bytes = FileAccess::get_file_as_bytes(path);
         const size_t length = _bytes.size();
         if (length < 1) throw RiveException("File <" + path + "> contained 0 bytes.");
-        Span<const uint8_t> bytes = Span(const_cast<uint8_t *>(_bytes.ptr()), length);
+        rive::Span<const uint8_t> bytes = rive::Span<const uint8_t>(const_cast<uint8_t *>(_bytes.ptr()), length);
 
-        ImportResult result;
-        Ptr<File> file = File::import(bytes, factory, &result);
-        if (result != ImportResult::success)
+        rive::ImportResult result;
+        rive::rcp<rive::File> file = rive::File::import(bytes, factory, &result);
+        if (result != rive::ImportResult::success)
             throw RiveException(String("Failed to import.\nErrors: ") + String(errs.str().c_str()));
 
         return file;

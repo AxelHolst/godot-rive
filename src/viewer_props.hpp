@@ -8,7 +8,7 @@
 #include <godot_cpp/variant/builtin_types.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/layout.hpp>
 
 using namespace godot;
@@ -90,8 +90,7 @@ struct PropEvent {
 
     void emit(Args... args) const {
         for (int i = 0; i < listeners.size(); i++) {
-            auto listener = listeners[i];
-            listener(args...);
+            listeners[i](args...);
         }
     }
 };

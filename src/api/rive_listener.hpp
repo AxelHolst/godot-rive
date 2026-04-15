@@ -9,7 +9,7 @@
 #include <godot_cpp/variant/rect2.hpp>
 #include <godot_cpp/variant/vector2.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/animation/state_machine_instance.hpp>
 #include <rive/animation/state_machine_listener.hpp>
 
@@ -79,7 +79,13 @@ class RiveListener : public Resource {
     }
 
     int get_type() const {
-        return listener ? (int)listener->listenerType() : (int)rive::ListenerType::move;
+        if (!listener) return (int)rive::ListenerType::move;
+        // In rive-runtime, listenerType() was removed. Use hasListener() to detect type.
+        if (listener->hasListener(rive::ListenerType::enter)) return (int)rive::ListenerType::enter;
+        if (listener->hasListener(rive::ListenerType::exit)) return (int)rive::ListenerType::exit;
+        if (listener->hasListener(rive::ListenerType::down)) return (int)rive::ListenerType::down;
+        if (listener->hasListener(rive::ListenerType::up)) return (int)rive::ListenerType::up;
+        return (int)rive::ListenerType::move;
     }
 
     String get_type_string() const {

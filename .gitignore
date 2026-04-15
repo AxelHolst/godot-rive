@@ -6,3 +6,12 @@
 *.os
 *.o
 .sconsign.dblite
+
+# Built extension binaries (rebuild with scons)
+demo/bin/
+
+# Godot 4.6+ UID files (auto-generated)
+*.uid
+
+# Session-specific context (not for version control)
+CLAUDE.md

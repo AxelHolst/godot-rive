@@ -8,7 +8,7 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/animation/linear_animation_instance.hpp>
 
 // extension

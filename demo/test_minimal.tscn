@@ -1,0 +1,22 @@
+[gd_scene format=3 uid="uid://dijswycyvcdgi"]
+
+[node name="Root" type="Control" unique_id=547030498]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="SingleViewer" type="RiveViewer" parent="." unique_id=1256346021]
+file_path = "res://examples/off_road_car.riv"
+artboard = 0
+scene = -1
+animation = 0
+custom_minimum_size = Vector2(200, 200)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2

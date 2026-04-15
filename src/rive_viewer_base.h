@@ -18,7 +18,7 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/builtin_types.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/animation/state_machine_instance.hpp>
 #include <rive/file.hpp>
 
@@ -51,6 +51,9 @@ class RiveViewerBase {
     RiveInstance inst;
     SkiaInstance sk;
     float elapsed = 0;
+    bool initialized = false;  // Guards against callbacks during scene loading
+    bool pending_file_load = false;  // Deferred file loading flag
+    Dictionary pending_property_values;  // Properties deferred until on_ready
     Dictionary cached_scene_property_values;
     Ref<Image> image;
     Ref<ImageTexture> texture;
@@ -62,6 +65,8 @@ class RiveViewerBase {
     void _on_animation_changed(int index);
     void _on_size_changed(float w, float h);
     void _on_transform_changed();
+    void load_rive_file(String path);
+    void deferred_init();  // Called on first process frame, when bindings are definitely ready
     void check_scene_property_changed();
     bool advance(float delta);
     PackedByteArray frame(float delta);
@@ -80,6 +85,7 @@ class RiveViewerBase {
 
     int width() const;
     int height() const;
+    bool is_initialized() const { return initialized; }
 
     /* Setters */
 
@@ -108,6 +114,8 @@ class RiveViewerBase {
     }
 
     void set_size(Vector2 value) {
+        // Always update size - the deferred_init will use it
+        // Size changes are safe since they don't create Ref<> objects directly
         props.size(value.x, value.y);
     }
 

@@ -3,6 +3,7 @@ from os.path import join
 
 
 def GetRiveBin(path: str) -> str:
+    """Get path to rive-runtime binary library."""
     platform_map = {
         "macos": "macosx",
         "windows": "windows",
@@ -13,7 +14,7 @@ def GetRiveBin(path: str) -> str:
     }
     return File(
         join(
-            "../thirdparty/rive-cpp",
+            "../thirdparty/rive-runtime",
             path.format(
                 platform=platform_map.get(env["platform"], env["platform"]),
                 target=target_map.get(env["target"], env["target"]),
@@ -28,14 +29,57 @@ env = SConscript("../godot-cpp/SConstruct")
 
 env["STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME"] = True
 
+# Enable C++ exceptions and RTTI - required for rive-runtime and Skia compatibility
+env.Append(CXXFLAGS=["-fexceptions", "-frtti"])
+env.Append(CFLAGS=["-fexceptions"])
+
 sources = []
 
+# rive-runtime root directory
+RIVE_RUNTIME_DIR = "../thirdparty/rive-runtime"
+
 # Add skia library
-SKIA_SRC_DIR = "../thirdparty/rive-cpp/skia/dependencies/skia"
+SKIA_SRC_DIR = join(RIVE_RUNTIME_DIR, "skia/dependencies/skia")
 env.RequireFile(Dir(SKIA_SRC_DIR))
+
+# Determine Skia output directory based on platform and architecture
+if env["platform"] == "macos":
+    skia_out_dir = join(SKIA_SRC_DIR, "out/macosx/x64")
+    # Fix for macOS Command Line Tools: add explicit C++ include path
+    env.Append(CXXFLAGS=["-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1"])
+    # Link required Apple frameworks for HarfBuzz CoreText support and Skia image encoding
+    env.Append(LINKFLAGS=[
+        "-framework", "CoreText",
+        "-framework", "CoreGraphics",
+        "-framework", "CoreFoundation",
+        "-framework", "CoreServices",  # For kUTType* symbols used by Skia image encoders
+        "-framework", "Metal",  # Skia Metal backend
+        "-framework", "Foundation",  # Foundation for Objective-C runtime
+        "-framework", "ImageIO",  # For kCGImageProperty* symbols
+    ])
+    # Remove dead_strip and stripping flags to preserve Skia symbols
+    # -dead_strip: removes unused code sections
+    # -S: strip debug symbols
+    # -x: strip local symbols
+    strip_flags = ["-Wl,-dead_strip", "-Wl,-S", "-Wl,-x"]
+    env["LINKFLAGS"] = [f for f in env["LINKFLAGS"] if f not in strip_flags]
+    print("DEBUG: LINKFLAGS after dead_strip removal:", env["LINKFLAGS"])
+elif env["platform"] == "windows":
+    skia_out_dir = join(SKIA_SRC_DIR, "out/windows/x64")
+else:
+    skia_out_dir = join(SKIA_SRC_DIR, "out/static")
+
+# Add Skia library with force_load to ensure all symbols (including vtables) are preserved
+import os
+skia_lib_path = os.path.abspath(join(skia_out_dir, "libskia.a"))
+print("DEBUG: Skia lib path:", skia_lib_path)
+# Use -force_load to pull in all object files from libskia.a
 env.Prepend(
-    LIBS=["skia"],
-    LIBPATH=[join(SKIA_SRC_DIR, "out/static")],
+    LINKFLAGS=["-Wl,-force_load," + skia_lib_path],
+)
+
+env.Prepend(
+    LIBPATH=[skia_out_dir],
     CPPPATH=[
         SKIA_SRC_DIR,
         join(SKIA_SRC_DIR, "include"),
@@ -43,30 +87,29 @@ env.Prepend(
     ],
 )
 
-# Add rive library
-
+# Add rive-runtime libraries
+# Note: Build output paths may vary - these are the expected locations after build
 rive_bins = [
-    GetRiveBin("build/{platform}/bin/{target}/librive{suffix}"),
-    GetRiveBin(
-        "skia/renderer/build/{platform}/bin/{target}/librive_skia_renderer{suffix}"
-    ),
-    GetRiveBin("dependencies/{platform}/cache/bin/{target}/librive_harfbuzz{suffix}"),
-    GetRiveBin("dependencies/{platform}/cache/bin/{target}/librive_sheenbidi{suffix}"),
+    GetRiveBin("out/{target}/librive{suffix}"),
+    GetRiveBin("skia/renderer/out/{target}/librive_skia_renderer{suffix}"),
+    GetRiveBin("out/{target}/librive_harfbuzz{suffix}"),
+    GetRiveBin("out/{target}/librive_sheenbidi{suffix}"),
+    GetRiveBin("out/{target}/librive_yoga{suffix}"),
 ]
 
 for lib in rive_bins:
     env.RequireFile(lib)
 
-RIVE_SRC_DIR = "../thirdparty/rive-cpp/"
+# Link rive libraries normally (not with force_load since they have undefined symbol refs)
 env.Prepend(
     LIBS=rive_bins,
     CPPPATH=[
-        RIVE_SRC_DIR,
-        join(RIVE_SRC_DIR, "include"),
-        join(RIVE_SRC_DIR, "src"),
-        join(RIVE_SRC_DIR, "skia/renderer"),
-        join(RIVE_SRC_DIR, "skia/renderer/include"),
-        join(RIVE_SRC_DIR, "skia/renderer/src"),
+        RIVE_RUNTIME_DIR,
+        join(RIVE_RUNTIME_DIR, "include"),
+        join(RIVE_RUNTIME_DIR, "src"),
+        join(RIVE_RUNTIME_DIR, "skia/renderer"),
+        join(RIVE_RUNTIME_DIR, "skia/renderer/include"),
+        join(RIVE_RUNTIME_DIR, "skia/renderer/src"),
     ],
 )
 

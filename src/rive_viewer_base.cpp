@@ -9,12 +9,16 @@
 #include <godot_cpp/core/binder_common.hpp>
 #include <godot_cpp/core/class_db.hpp>
 
-// rive-cpp
+// rive-runtime
 #include <rive/animation/linear_animation.hpp>
 #include <rive/animation/linear_animation_instance.hpp>
 
+// skia renderer
+#include <skia/renderer/include/skia_renderer.hpp>
+
 // extension
 #include "rive_exceptions.hpp"
+#include "rive_global.hpp"
 #include "utils/godot_macros.hpp"
 #include "utils/types.hpp"
 
@@ -22,7 +26,7 @@ const Image::Format IMAGE_FORMAT = Image::Format::FORMAT_RGBA8;
 
 RiveViewerBase::RiveViewerBase(CanvasItem *owner) {
     this->owner = owner;
-    inst.set_props(&props);
+    inst.set_props(&props, &initialized);  // Pass initialized flag for callback guards
     sk.set_props(&props);
     props.on_artboard_changed([this](int index) { _on_artboard_changed(index); });
     props.on_scene_changed([this](int index) { _on_scene_changed(index); });
@@ -57,9 +61,17 @@ void RiveViewerBase::on_draw() {
 }
 
 void RiveViewerBase::on_process(float delta) {
+    // Deferred initialization - wait until first process frame when bindings are fully ready
+    if (!initialized) {
+        deferred_init();
+    }
+
     if (owner->is_node_ready() && !props.paused()) {
-        if (is_null(image)) image = Image::create(width(), height(), false, IMAGE_FORMAT);
-        if (is_null(texture)) texture = ImageTexture::create_from_image(image);
+        // Recreate image/texture if size changed
+        if (is_null(image) || image->get_width() != width() || image->get_height() != height()) {
+            image = Image::create(width(), height(), false, IMAGE_FORMAT);
+            texture = ImageTexture::create_from_image(image);
+        }
         PackedByteArray bytes = frame(delta);
         if (bytes.size()) {
             image->set_data(width(), height(), false, IMAGE_FORMAT, bytes);
@@ -71,7 +83,34 @@ void RiveViewerBase::on_process(float delta) {
 }
 
 void RiveViewerBase::on_ready() {
+    // DON'T set initialized here - defer to first process frame
+    // because _ready() is called during scene loading and bindings may not be fully ready
     elapsed = 0.0;
+}
+
+void RiveViewerBase::deferred_init() {
+    if (initialized) return;
+    initialized = true;  // Now safe to process callbacks that create Ref<> objects
+
+    // Deferred file loading - if a file path was set during scene loading,
+    // we couldn't load it then because bindings weren't ready. Load it now.
+    if (pending_file_load && !props.path().is_empty()) {
+        pending_file_load = false;
+        load_rive_file(props.path());
+    }
+
+    // Apply deferred property values that were set during scene loading
+    if (pending_property_values.has("artboard")) {
+        props.artboard((int)pending_property_values["artboard"]);
+    }
+    if (pending_property_values.has("scene")) {
+        props.scene((int)pending_property_values["scene"]);
+    }
+    if (pending_property_values.has("animation")) {
+        props.animation((int)pending_property_values["animation"]);
+    }
+    pending_property_values.clear();
+
     props.size(width(), height());
 }
 
@@ -97,9 +136,18 @@ int RiveViewerBase::height() const {
 }
 
 void RiveViewerBase::_on_path_changed(String path) {
+    // Guard: File loading creates Ref<RiveFile> which triggers binding callbacks.
+    // During scene loading, bindings aren't ready. Defer loading to on_ready().
+    if (!initialized) {
+        pending_file_load = true;
+        return;
+    }
+    load_rive_file(path);
+}
+
+void RiveViewerBase::load_rive_file(String path) {
     try {
-        inst.file = RiveFile::Load(path, sk.factory.get());
-        GDPRINT("Successfully imported <", path, ">!");
+        inst.file = RiveFile::Load(path, RiveGlobal::get_factory());
     } catch (RiveException error) {
         error.report();
     }
@@ -110,24 +158,26 @@ void RiveViewerBase::_on_path_changed(String path) {
 }
 
 void RiveViewerBase::get_property_list(List<PropertyInfo> *list) const {
-    if (owner->is_node_ready()) {
-        inst.instantiate();
-        if (exists(inst.file)) {
-            String artboard_hint = inst.file->_get_artboard_property_hint();
-            list->push_back(PropertyInfo(Variant::INT, "artboard", PROPERTY_HINT_ENUM, artboard_hint));
-        }
-        auto artboard = inst.artboard();
-        if (exists(artboard)) {
-            String scene_hint = artboard->_get_scene_property_hint();
-            list->push_back(PropertyInfo(Variant::INT, "scene", PROPERTY_HINT_ENUM, scene_hint));
-            String anim_hint = artboard->_get_animation_property_hint();
-            list->push_back(PropertyInfo(Variant::INT, "animation", PROPERTY_HINT_ENUM, anim_hint));
-        }
-        auto scene = inst.scene();
-        if (exists(scene)) {
-            list->push_back(PropertyInfo(Variant::NIL, "Scene", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_CATEGORY));
-            scene->_get_input_property_list(list);
-        }
+    // Guard: Only enumerate dynamic properties after full initialization
+    // During scene loading, accessing Rive objects creates Ref<> which triggers binding callbacks
+    if (!initialized) return;
+
+    inst.instantiate();
+    if (exists(inst.file)) {
+        String artboard_hint = inst.file->_get_artboard_property_hint();
+        list->push_back(PropertyInfo(Variant::INT, "artboard", PROPERTY_HINT_ENUM, artboard_hint));
+    }
+    auto artboard = inst.artboard();
+    if (exists(artboard)) {
+        String scene_hint = artboard->_get_scene_property_hint();
+        list->push_back(PropertyInfo(Variant::INT, "scene", PROPERTY_HINT_ENUM, scene_hint));
+        String anim_hint = artboard->_get_animation_property_hint();
+        list->push_back(PropertyInfo(Variant::INT, "animation", PROPERTY_HINT_ENUM, anim_hint));
+    }
+    auto scene = inst.scene();
+    if (exists(scene)) {
+        list->push_back(PropertyInfo(Variant::NIL, "Scene", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_CATEGORY));
+        scene->_get_input_property_list(list);
     }
 }
 
@@ -152,6 +202,19 @@ void RiveViewerBase::_on_animation_changed(int _index) {
 }
 
 bool RiveViewerBase::on_set(const StringName &prop, const Variant &value) {
+    // CRITICAL GUARD: During scene loading, setting properties that trigger callbacks
+    // can cause crashes because Godot's binding system isn't ready. We store the values
+    // and apply them later in on_ready().
+    if (!initialized) {
+        String name = prop;
+        if (name == "artboard" || name == "scene" || name == "animation") {
+            pending_property_values[name] = value;
+            return true;
+        }
+        // For other properties (like scene inputs), ignore during loading
+        return false;
+    }
+
     String name = prop;
     if (name == "artboard") {
         props.artboard((int)value);
@@ -165,6 +228,8 @@ bool RiveViewerBase::on_set(const StringName &prop, const Variant &value) {
         props.animation((int)value);
         return true;
     }
+    // Scene property handling - only after full initialization
+    if (!initialized) return false;
     inst.instantiate();
     if (exists(inst.scene()) && inst.scene()->get_input_names().has(name)) {
         props.scene_property(name, value);
@@ -195,6 +260,8 @@ bool RiveViewerBase::on_get(const StringName &prop, Variant &return_value) const
 }
 
 void RiveViewerBase::_on_size_changed(float w, float h) {
+    // Guard: Creating Image/ImageTexture during scene loading might be unsafe
+    if (!initialized) return;
     if (!is_null(image)) unref(image);
     if (!is_null(texture)) unref(texture);
     image = Image::create(width(), height(), false, IMAGE_FORMAT);
@@ -202,13 +269,10 @@ void RiveViewerBase::_on_size_changed(float w, float h) {
 }
 
 void RiveViewerBase::_on_transform_changed() {
-    if (sk.renderer) sk.renderer->transform(inst.current_transform);
-    PackedByteArray bytes = frame(0.0);
-    if (bytes.size()) {
-        image->set_data(width(), height(), false, IMAGE_FORMAT, bytes);
-        texture->update(image);
-        owner->queue_redraw();
-    }
+    // Skip redraw during transform changes - the regular on_process frame processing
+    // will handle the draw. This prevents crashes in Yoga layout when the artboard
+    // is being set up for the first time.
+    // TODO: Consider enabling this for interactive resizing scenarios
 }
 
 bool RiveViewerBase::advance(float delta) {
@@ -217,18 +281,58 @@ bool RiveViewerBase::advance(float delta) {
 }
 
 PackedByteArray RiveViewerBase::redraw() {
+    auto* canvas = sk.getCanvas();
+    if (!canvas) return PackedByteArray();
+
+    // Clear to transparent
+    canvas->clear(SK_ColorTRANSPARENT);
+
+    // Get the artboard and draw it
     auto artboard = inst.artboard();
-    if (sk.surface && sk.renderer && exists(artboard)) {
-        sk.clear();
-        inst.draw(sk.renderer.get());
-        return sk.bytes();
+    if (exists(artboard)) {
+        // Create renderer using the global factory
+        rive::SkiaRenderer renderer(canvas);
+
+        canvas->save();
+
+        // Scale and center artboard in the canvas
+        Rect2 bounds = artboard->get_bounds();
+        float artboardWidth = bounds.size.x;
+        float artboardHeight = bounds.size.y;
+        float canvasWidth = props.width();
+        float canvasHeight = props.height();
+
+        if (artboardWidth > 0 && artboardHeight > 0) {
+            float scale = std::min(canvasWidth / artboardWidth, canvasHeight / artboardHeight);
+            float tx = (canvasWidth - artboardWidth * scale) / 2.0f;
+            float ty = (canvasHeight - artboardHeight * scale) / 2.0f;
+
+            canvas->translate(tx, ty);
+            canvas->scale(scale, scale);
+        }
+
+        // Draw the artboard - access the raw rive::ArtboardInstance pointer
+        artboard->artboard->draw(&renderer);
+
+        canvas->restore();
+    } else {
+        // No artboard - draw a test pattern (magenta for visibility)
+        canvas->drawColor(SkColorSetRGB(255, 0, 255));
     }
-    return PackedByteArray();
+
+    return sk.bytes();
 }
 
 PackedByteArray RiveViewerBase::frame(float delta) {
-    if (!exists(inst.file) || !exists(inst.artboard()) || !sk.renderer || !sk.surface) return PackedByteArray();
-    if (advance(delta) && owner->is_visible()) return redraw();
+    if (!sk.getCanvas()) return PackedByteArray();
+
+    // Advance the animation
+    advance(delta);
+
+    // Redraw if visible
+    if (owner->is_visible()) {
+        return redraw();
+    }
     return PackedByteArray();
 }
 
