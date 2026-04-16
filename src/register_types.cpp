@@ -8,6 +8,7 @@
 
 #include "rive_viewer.hpp"
 #include "rive_viewer_2d.hpp"
+#include "api/rive_event.hpp"
 
 using namespace godot;
 
@@ -24,6 +25,7 @@ void initialize_rive_module(ModuleInitializationLevel p_level) {
     ClassDB::register_class<RiveInput>();
     ClassDB::register_class<RiveListener>();
     ClassDB::register_class<RiveAnimation>();
+    ClassDB::register_class<RiveEvent>();
 }
 
 void uninitialize_rive_module(ModuleInitializationLevel p_level) {

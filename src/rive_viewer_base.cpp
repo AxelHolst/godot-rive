@@ -12,6 +12,7 @@
 // rive-runtime
 #include <rive/animation/linear_animation.hpp>
 #include <rive/animation/linear_animation_instance.hpp>
+#include <rive/event_report.hpp>
 
 // skia renderer
 #include <skia/renderer/include/skia_renderer.hpp>
@@ -277,7 +278,28 @@ void RiveViewerBase::_on_transform_changed() {
 
 bool RiveViewerBase::advance(float delta) {
     elapsed += delta;
-    return inst.advance(delta);
+    bool result = inst.advance(delta);
+
+    // Poll and emit Rive events after advancing
+    poll_events();
+
+    return result;
+}
+
+void RiveViewerBase::poll_events() {
+    auto scene = inst.scene();
+    if (!exists(scene) || !scene->scene) return;
+
+    // Get the underlying StateMachineInstance
+    rive::StateMachineInstance* sm = scene->scene.get();
+
+    // Poll all reported events
+    std::size_t event_count = sm->reportedEventCount();
+    for (std::size_t i = 0; i < event_count; i++) {
+        const rive::EventReport report = sm->reportedEventAt(i);
+        Ref<RiveEvent> event = RiveEvent::from_report(report);
+        owner->emit_signal("rive_event", event);
+    }
 }
 
 PackedByteArray RiveViewerBase::redraw() {
