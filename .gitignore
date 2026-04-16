@@ -10,6 +10,9 @@
 # Built extension binaries (rebuild with scons)
 demo/bin/
 
+# Exported builds (rebuild with Godot export)
+builds/
+
 # Godot 4.6+ UID files (auto-generated)
 *.uid
 

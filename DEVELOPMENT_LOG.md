@@ -855,7 +855,85 @@ scons platform=macos target=template_debug arch=x86_64
 
 ### Roadmap Update
 - **M3: Events & Triggers** - ✅ Complete
-- **M4: Linux Build** - Next priority
+- **M4: Distribution** - 🔄 In Progress (macOS export validation → Linux builds)
 - **M5: GPU Rendering** - Deferred
 - **M6: ViewModel** - Requires deeper research
+
+---
+
+## 2026-04-16: Distribution Phase - macOS Export Validation
+
+### Objective
+Validate standalone macOS export before moving to Linux cross-compilation.
+
+### Infrastructure Setup
+
+**Directory Structure:**
+```
+builds/
+├── macos/          # macOS .app bundles
+├── linux/          # Linux x86_64 executables
+└── windows/        # Windows executables (future)
+```
+
+**.gitignore Updated:**
+- Added `builds/` to exclusions
+
+**.gdextension Updated:**
+- Added Linux library paths (placeholders)
+- Temporarily using debug framework for release (rive-runtime release libs not built)
+
+### Current State
+- Debug framework: ✅ Built (34MB)
+- Release framework: ❌ Not built (requires rive-runtime release libs ~15-30 min build)
+
+### macOS Export Checklist
+
+**Pre-Export:**
+- [ ] Verify `demo/bin/librive.macos.template_debug.framework/` exists
+- [ ] Verify `demo/rive.gdextension` points to correct paths
+- [ ] Ensure export templates installed (Godot 4.6.2 Stable)
+
+**Export Settings (Godot Editor):**
+1. **Project > Export > Add Preset > macOS**
+2. **Application:**
+   - App Category: `Games`
+   - Bundle Identifier: `com.example.rivedemo` (or custom)
+3. **GDExtension:**
+   - Godot automatically includes files referenced in `.gdextension`
+   - The `bin/` folder with framework will be bundled
+4. **Export Path:**
+   - `builds/macos/RiveDemo.app`
+5. **Options:**
+   - "Export With Debug" for initial smoke test
+   - Code signing can be skipped for local testing
+
+**Post-Export Verification:**
+- [ ] `.app` bundle created successfully
+- [ ] `Contents/Frameworks/` contains librive framework
+- [ ] App launches without crash
+- [ ] Rive animations render correctly
+- [ ] Events fire (test with nested_artboard_events.riv)
+- [ ] Inputs respond (test with interactive .riv)
+
+### Potential Export Issues
+
+**Issue 1: Missing Framework**
+If the framework isn't bundled, check:
+- `.gdextension` paths are relative to `demo/`
+- Framework directory structure is correct (not just the binary)
+
+**Issue 2: Code Signing (macOS Gatekeeper)**
+For local testing, right-click and "Open" to bypass.
+For distribution, will need Apple Developer signing.
+
+**Issue 3: Library Dependencies**
+The framework should be self-contained. If there are missing symbol errors:
+- Check all static libs were linked during scons build
+- Verify no dynamic dependencies on system libs
+
+### Next Steps After macOS Validation
+1. Document any export issues found
+2. Build rive-runtime release libraries
+3. Set up Linux cross-compilation (M4)
 
