@@ -937,3 +937,127 @@ The framework should be self-contained. If there are missing symbol errors:
 2. Build rive-runtime release libraries
 3. Set up Linux cross-compilation (M4)
 
+---
+
+## 2026-04-16: Milestone 3 Complete - Standalone Export Fix
+
+### The "Pink Screen" Bug
+
+**Symptom**: Standalone macOS exports showed a pink screen (no rendering) even though the editor worked fine.
+
+**Initial Hypothesis**: ABI mismatch between GDExtension and librive.a due to missing preprocessor defines or compiler flags.
+
+### Investigation Process
+
+1. **Added sizeof() diagnostics** to capture struct sizes at runtime
+2. **Compared** our build flags against `rive.make` (librive.a's Makefile)
+3. **Added missing flags** to SConstruct:
+   - Force-include headers: `rive_harfbuzz_renames.h`, `rive_yoga_renames.h`
+   - Preprocessor defines: `WITH_RIVE_TEXT`, `WITH_RIVE_LAYOUT`, `RIVE_MACOSX`, `_RIVE_INTERNAL_`
+   - macOS flags: `-fobjc-arc`, `-mmacosx-version-min=11.0`
+
+4. **Key Discovery**: sizeof values matched perfectly (264, 3104, 24), but `artboardCount()` still returned 0!
+
+### Root Cause (NOT an ABI issue!)
+
+The actual bug was a **logic error** in the wrapper classes:
+
+```cpp
+// BROKEN: Returns cache size (always 0 before any artboard is accessed)
+int get_artboard_count() const {
+    return artboards.get_size();  // Returns std::map size = 0
+}
+
+// FIXED: Returns actual rive::File count
+int get_artboard_count() const {
+    return file ? static_cast<int>(file->artboardCount()) : 0;
+}
+```
+
+The `Instances<T>` class is a lazy-loading cache that only populates when items are requested. The `get_size()` method returned the cache map size (0), not the actual count from the underlying rive objects.
+
+### Files Fixed
+
+| File | Method | Before | After |
+|------|--------|--------|-------|
+| `rive_file.hpp` | `get_artboard_count()` | `artboards.get_size()` | `file->artboardCount()` |
+| `rive_artboard.hpp` | `get_scene_count()` | `scenes.get_size()` | `artboard->stateMachineCount()` |
+| `rive_artboard.hpp` | `get_animation_count()` | `animations.get_size()` | `artboard->animationCount()` |
+| `rive_scene.hpp` | `get_input_count()` | `inputs.get_size()` | `scene->inputCount()` |
+| `rive_scene.hpp` | `get_listener_count()` | `listeners.get_size()` | `scene->stateMachine()->listenerCount()` |
+
+### SConstruct Improvements (Retained)
+
+Even though the root cause wasn't ABI, the SConstruct improvements are valuable for correctness:
+
+1. **Force-include headers** prevent ODR violations from duplicate HarfBuzz/Yoga symbols
+2. **Preprocessor defines** ensure struct layouts match librive.a
+3. **macOS flags** ensure proper Objective-C interop and deployment target
+
+### Verification
+
+```
+[RiveViewer] File loaded: 3 artboard(s)
+[RiveViewer] Artboard 'Main' has 1 scene(s), 13 animation(s)
+[RiveViewer] Objects - File: OK, Artboard: OK, Scene: OK
+```
+
+Standalone macOS export now renders correctly with animated circles.
+
+### Milestone 3 Status: ✅ COMPLETE
+
+- [x] Rive Events working
+- [x] Nested artboard inputs implemented
+- [x] Standalone macOS export working
+- [x] ABI alignment with librive.a
+- [x] Pink screen bug fixed
+
+---
+
+## Milestone 4: Linux Build - Planning
+
+### Challenge
+We need to build the GDExtension for Linux x86_64 from a macOS host.
+
+### Dependencies Required for Linux
+1. **librive.a** (Linux x86_64) - Must be cross-compiled or built on Linux
+2. **librive_skia_renderer.a** (Linux x86_64)
+3. **librive_harfbuzz.a** (Linux x86_64)
+4. **librive_sheenbidi.a** (Linux x86_64)
+5. **librive_yoga.a** (Linux x86_64)
+6. **libskia.a** (Linux x86_64)
+7. **libgodot-cpp.a** (Linux x86_64)
+
+### Approach Options
+
+**Option A: GitHub Actions CI**
+- Build rive-runtime and GDExtension in a Linux container
+- Most reliable, matches real deployment environment
+- Can cache built libraries between runs
+
+**Option B: Docker on macOS**
+- Run a Linux container locally for compilation
+- Faster iteration than CI
+- Requires Docker Desktop
+
+**Option C: Cross-compilation toolchain**
+- Use clang with Linux target triple
+- Most complex setup
+- May have issues with system library compatibility
+
+### Recommended: GitHub Actions (Option A)
+
+1. Create `.github/workflows/build-linux.yml`
+2. Use Ubuntu runner
+3. Install dependencies: premake5, ninja, clang
+4. Build rive-runtime libraries
+5. Build godot-cpp
+6. Build GDExtension
+7. Upload artifacts
+
+### Next Steps
+1. Research rive-runtime's Linux build process
+2. Create initial GitHub Actions workflow
+3. Test first compilation
+4. Iterate on missing dependencies
+

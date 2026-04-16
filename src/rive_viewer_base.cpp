@@ -14,6 +14,8 @@
 #include <rive/animation/linear_animation.hpp>
 #include <rive/animation/linear_animation_instance.hpp>
 #include <rive/event_report.hpp>
+#include <rive/file.hpp>
+#include <rive/artboard.hpp>
 
 // skia renderer
 #include <skia/renderer/include/skia_renderer.hpp>

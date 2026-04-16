@@ -129,11 +129,13 @@ class RiveScene : public Resource {
     }
 
     int get_input_count() const {
-        return inputs.get_size();
+        // Return actual scene input count, not cache size
+        return scene ? static_cast<int>(scene->inputCount()) : 0;
     }
 
     int get_listener_count() const {
-        return listeners.get_size();
+        // Return actual state machine listener count, not cache size
+        return (scene && scene->stateMachine()) ? static_cast<int>(scene->stateMachine()->listenerCount()) : 0;
     }
 
     TypedArray<RiveInput> get_inputs() const {

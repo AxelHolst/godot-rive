@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RiveListener::get_type()` now uses `hasListener()` checks instead of removed `listenerType()`
 
 ### Fixed
+- **Standalone export "pink screen" (M3)** - Fixed count methods returning cache size instead of actual Rive counts
+  - `RiveFile.get_artboard_count()` now calls `file->artboardCount()`
+  - `RiveArtboard.get_scene_count()` now calls `artboard->stateMachineCount()`
+  - `RiveArtboard.get_animation_count()` now calls `artboard->animationCount()`
+  - `RiveScene.get_input_count()` now calls `scene->inputCount()`
+  - `RiveScene.get_listener_count()` now calls `scene->stateMachine()->listenerCount()`
+- **ABI alignment with librive.a** - SConstruct now matches rive.make build flags exactly
+  - Force-include headers for HarfBuzz/Yoga symbol renaming (prevents ODR violations)
+  - Preprocessor defines: `WITH_RIVE_TEXT`, `WITH_RIVE_LAYOUT`, `RIVE_MACOSX`, `_RIVE_INTERNAL_`
+  - macOS flags: `-fobjc-arc`, `-mmacosx-version-min=11.0`
 - **Scene loading crash** - Added deferred initialization to prevent binding callbacks during scene load
 - **SkCanvas crash** - Removed `-DRIVE_OPTIMIZED` flag that stubbed out Skia constructors
 - **macOS build** - Added C++ header workaround for Command Line Tools

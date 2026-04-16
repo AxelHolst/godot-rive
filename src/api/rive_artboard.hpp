@@ -139,11 +139,13 @@ class RiveArtboard : public Resource {
     }
 
     int get_scene_count() const {
-        return scenes.get_size();
+        // Return actual artboard state machine count, not cache size
+        return artboard ? static_cast<int>(artboard->stateMachineCount()) : 0;
     }
 
     int get_animation_count() const {
-        return animations.get_size();
+        // Return actual artboard animation count, not cache size
+        return artboard ? static_cast<int>(artboard->animationCount()) : 0;
     }
 
     TypedArray<RiveScene> get_scenes() const {
