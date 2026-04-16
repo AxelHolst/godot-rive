@@ -69,6 +69,19 @@ class RiveScene : public Resource {
         ClassDB::bind_method(D_METHOD("is_loop"), &RiveScene::is_loop);
         ClassDB::bind_method(D_METHOD("is_pingpong"), &RiveScene::is_pingpong);
         ClassDB::bind_method(D_METHOD("is_one_shot"), &RiveScene::is_one_shot);
+
+        // Nested artboard input methods (explicit path + name)
+        ClassDB::bind_method(D_METHOD("get_bool_at_path", "name", "path"), &RiveScene::get_bool_at_path);
+        ClassDB::bind_method(D_METHOD("set_bool_at_path", "name", "path", "value"), &RiveScene::set_bool_at_path);
+        ClassDB::bind_method(D_METHOD("get_number_at_path", "name", "path"), &RiveScene::get_number_at_path);
+        ClassDB::bind_method(D_METHOD("set_number_at_path", "name", "path", "value"), &RiveScene::set_number_at_path);
+        ClassDB::bind_method(D_METHOD("fire_trigger_at_path", "name", "path"), &RiveScene::fire_trigger_at_path);
+        ClassDB::bind_method(D_METHOD("get_input_at_path", "name", "path"), &RiveScene::get_input_at_path);
+
+        // Convenience methods (combined path format: "NestedArtboard/InputName")
+        ClassDB::bind_method(D_METHOD("set_input", "input_path", "value"), &RiveScene::set_input);
+        ClassDB::bind_method(D_METHOD("get_input_value", "input_path"), &RiveScene::get_input_value);
+        ClassDB::bind_method(D_METHOD("fire", "input_path"), &RiveScene::fire);
     }
 
     void _instantiate_inputs() {
@@ -192,6 +205,145 @@ class RiveScene : public Resource {
 
     void release_mouse(rive::Mat2D inverse_transform, Vector2 position) {
         if (scene) scene->pointerUp(inverse_transform * rive::Vec2D(position.x, position.y));
+    }
+
+    /* Nested Artboard Input Methods */
+
+    /// Get a boolean input from a nested artboard
+    /// @param name The input name (e.g., "isActive")
+    /// @param path The path to the nested artboard (e.g., "Button1" or "Panel/Button1")
+    Variant get_bool_at_path(const String& name, const String& path) const {
+        if (!artboard) return Variant();
+        rive::SMIBool* input = artboard->getBool(name.utf8().get_data(), path.utf8().get_data());
+        if (input) return input->value();
+        return Variant();
+    }
+
+    /// Set a boolean input on a nested artboard
+    bool set_bool_at_path(const String& name, const String& path, bool value) {
+        if (!artboard) return false;
+        rive::SMIBool* input = artboard->getBool(name.utf8().get_data(), path.utf8().get_data());
+        if (input) {
+            input->value(value);
+            return true;
+        }
+        return false;
+    }
+
+    /// Get a number input from a nested artboard
+    Variant get_number_at_path(const String& name, const String& path) const {
+        if (!artboard) return Variant();
+        rive::SMINumber* input = artboard->getNumber(name.utf8().get_data(), path.utf8().get_data());
+        if (input) return input->value();
+        return Variant();
+    }
+
+    /// Set a number input on a nested artboard
+    bool set_number_at_path(const String& name, const String& path, float value) {
+        if (!artboard) return false;
+        rive::SMINumber* input = artboard->getNumber(name.utf8().get_data(), path.utf8().get_data());
+        if (input) {
+            input->value(value);
+            return true;
+        }
+        return false;
+    }
+
+    /// Fire a trigger input on a nested artboard
+    bool fire_trigger_at_path(const String& name, const String& path) {
+        if (!artboard) return false;
+        rive::SMITrigger* input = artboard->getTrigger(name.utf8().get_data(), path.utf8().get_data());
+        if (input) {
+            input->fire();
+            return true;
+        }
+        return false;
+    }
+
+    /// Get any input from a nested artboard (returns RiveInput wrapper)
+    Ref<RiveInput> get_input_at_path(const String& name, const String& path) {
+        if (!artboard) return nullptr;
+        rive::SMIInput* input = artboard->input(name.utf8().get_data(), path.utf8().get_data());
+        if (input) return RiveInput::MakeRef(input, -1);  // -1 index since it's a path-based lookup
+        return nullptr;
+    }
+
+    /* Convenience Methods - Combined Path Format */
+    // These accept a single string like "NestedArtboard/InputName" or "Parent/Child/InputName"
+
+   private:
+    /// Split a combined path like "Cirkle1/Color" into path ("Cirkle1") and name ("Color")
+    /// For nested paths like "Panel/Button/isActive", path = "Panel/Button", name = "isActive"
+    std::pair<String, String> _split_input_path(const String& full_path) const {
+        int last_slash = full_path.rfind("/");
+        if (last_slash == -1) {
+            // No slash - name only, empty path (root level)
+            return std::make_pair(String(), full_path);
+        }
+        return std::make_pair(full_path.substr(0, last_slash), full_path.substr(last_slash + 1));
+    }
+
+   public:
+    /// Set an input value using combined path format (e.g., "Cirkle1/Color" for nested, "Color" for root)
+    /// @param input_path Combined path like "NestedArtboard/InputName"
+    /// @param value The value to set (bool for boolean, float for number)
+    /// @returns true if input was found and set
+    bool set_input(const String& input_path, const Variant& value) {
+        auto [path, name] = _split_input_path(input_path);
+
+        if (path.is_empty()) {
+            // Root level input - use the existing find_input method
+            Ref<RiveInput> input = find_input(name);
+            if (input.is_valid() && input->exists()) {
+                input->set_value(value);
+                return true;
+            }
+            return false;
+        }
+
+        // Nested input
+        if (value.get_type() == Variant::BOOL) {
+            return set_bool_at_path(name, path, (bool)value);
+        } else if (value.get_type() == Variant::FLOAT || value.get_type() == Variant::INT) {
+            return set_number_at_path(name, path, (float)value);
+        }
+        return false;
+    }
+
+    /// Get an input value using combined path format
+    Variant get_input_value(const String& input_path) const {
+        auto [path, name] = _split_input_path(input_path);
+
+        if (path.is_empty()) {
+            // Root level input
+            Ref<RiveInput> input = find_input(name);
+            if (input.is_valid() && input->exists()) {
+                return input->get_value();
+            }
+            return Variant();
+        }
+
+        // Try bool first, then number
+        Variant result = get_bool_at_path(name, path);
+        if (result.get_type() != Variant::NIL) return result;
+        return get_number_at_path(name, path);
+    }
+
+    /// Fire a trigger using combined path format (e.g., "Cirkle1/Click" or "Click")
+    bool fire(const String& input_path) {
+        auto [path, name] = _split_input_path(input_path);
+
+        if (path.is_empty()) {
+            // Root level trigger
+            Ref<RiveInput> input = find_input(name);
+            if (input.is_valid() && input->exists() && input->is_trigger()) {
+                input->fire();
+                return true;
+            }
+            return false;
+        }
+
+        return fire_trigger_at_path(name, path);
     }
 
     /* Overrides */

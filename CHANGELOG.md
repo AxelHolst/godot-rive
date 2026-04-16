@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Rive Events (M3)** - Full event system with `rive_event` signal and `RiveEvent` class
+  - `RiveEvent.name` - Event name
+  - `RiveEvent.seconds_delay` - Time offset from frame start
+  - `RiveEvent.properties` - Dictionary of custom properties (bool, number, string)
+  - Signal emitted during `_process()` after state machine advance
+- **Nested Artboard Inputs (M3)** - Control inputs inside nested artboards
+  - `RiveScene.set_input("NestedArtboard/InputName", value)` - Combined path format
+  - `RiveScene.get_input_value("NestedArtboard/InputName")` - Get nested input value
+  - `RiveScene.fire("NestedArtboard/TriggerName")` - Fire nested triggers
+  - Explicit methods: `set_bool_at_path()`, `set_number_at_path()`, `fire_trigger_at_path()`
 - **Trigger input API** - `RiveInput::is_trigger()` and `RiveInput::fire()` methods (untested)
 - Project governance files (CHANGELOG.md, DEVELOPMENT_LOG.md, ARCHITECTURE.md)
 - Established `develop` branch for ongoing development
@@ -27,13 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **macOS build** - Added C++ header workaround for Command Line Tools
 
 ### Needs Testing
+- [x] Rive Events (tested with nested_artboard_events.riv)
+- [ ] Nested artboard inputs
 - [ ] Trigger inputs (`RiveInput::fire()`)
 - [ ] State machine input changes via inspector
 - [ ] Mouse interactions (joystick.riv)
 
 ### Planned (Roadmap)
-- **M3: Rive Events** - Event polling and signals
-- **M3: Nested Input Paths** - Control inputs in nested artboards
 - **M4: Linux Build** - Cross-platform deployment
 - **M5: GPU Rendering** - RenderingDevice or Rive Renderer integration
 - **M6: ViewModel/Data Binding** - Unity parity for data-driven animations

@@ -734,8 +734,128 @@ public void FireInputStateAtPath(string inputName, string path);
 - `DEVELOPMENT_LOG.md` - This entry
 
 ### Next Steps
-1. Implement `RiveEvent` class with properties
-2. Add `rive_event` signal to RiveViewer
-3. Add event polling in advance loop
-4. Implement nested input path methods on RiveArtboard
+1. ~~Implement `RiveEvent` class with properties~~ ✅
+2. ~~Add `rive_event` signal to RiveViewer~~ ✅
+3. ~~Add event polling in advance loop~~ ✅
+4. ~~Implement nested input path methods on RiveArtboard~~ ✅
+
+---
+
+## 2026-04-16: Milestone 3 Complete - Events & Nested Inputs
+
+### Summary
+Milestone 3 fully implemented, adding two critical features that bring godot-rive closer to rive-unity parity.
+
+### Part 1: Rive Events System
+
+**Commit:** `1ab74bd` - feat(events): implement Rive event system (M3 Part 1)
+
+**Files Added/Modified:**
+- `src/api/rive_event.hpp` (NEW) - RiveEvent class exposing:
+  - `name` - Event name from Rive file
+  - `seconds_delay` - Time offset from frame start
+  - `properties` - Dictionary of custom properties (bool, number, string)
+- `src/register_types.cpp` - Registered RiveEvent class
+- `src/rive_viewer_base.h` - Added `rive_event` signal
+- `src/rive_viewer_base.cpp` - Added `poll_events()` called after advance
+
+**Implementation Details:**
+```cpp
+// Event polling pattern (matches rive-unity approach)
+void RiveViewerBase::poll_events() {
+    rive::StateMachineInstance* sm = scene->scene.get();
+    std::size_t event_count = sm->reportedEventCount();
+    for (std::size_t i = 0; i < event_count; i++) {
+        const rive::EventReport report = sm->reportedEventAt(i);
+        Ref<RiveEvent> event = RiveEvent::from_report(report);
+        owner->emit_signal("rive_event", event);
+    }
+}
+```
+
+**GDScript Usage:**
+```gdscript
+func _ready():
+    $RiveViewer.rive_event.connect(_on_rive_event)
+
+func _on_rive_event(event: RiveEvent):
+    print("Event: ", event.name)
+    print("Properties: ", event.properties)
+```
+
+**Tested With:** `nested_artboard_events.riv` - Events firing confirmed!
+
+### Part 2: Nested Artboard Inputs
+
+**Files Modified:**
+- `src/api/rive_scene.hpp` - Added nested input methods
+
+**New Methods on RiveScene:**
+
+*Explicit Path API (mirrors rive-runtime):*
+```cpp
+// Separate path and name parameters
+get_bool_at_path(name, path)
+set_bool_at_path(name, path, value)
+get_number_at_path(name, path)
+set_number_at_path(name, path, value)
+fire_trigger_at_path(name, path)
+get_input_at_path(name, path)
+```
+
+*Convenience API (combined path format):*
+```cpp
+// Single path string like "NestedArtboard/InputName"
+set_input(input_path, value)      // Works with bool/number
+get_input_value(input_path)       // Returns variant
+fire(input_path)                  // Fire triggers
+```
+
+**GDScript Usage:**
+```gdscript
+var scene = $RiveViewer.get_scene()
+
+# Set nested input (combined path)
+scene.set_input("Cirkle1/Color", 2.0)
+scene.fire("Panel/Button/Click")
+
+# Or explicit path API
+scene.set_number_at_path("Color", "Cirkle1", 2.0)
+scene.fire_trigger_at_path("Click", "Panel/Button")
+```
+
+### Path Format
+The combined path format uses `/` as separator:
+- `"InputName"` → Root-level input (empty path)
+- `"NestedArtboard/InputName"` → Single nested artboard
+- `"Parent/Child/InputName"` → Deeply nested (path = "Parent/Child", name = "InputName")
+
+### Build Verification
+```bash
+scons platform=macos target=template_debug arch=x86_64
+# Output: demo/bin/librive.macos.template_debug.framework/librive.macos.template_debug
+```
+
+### Feature Comparison After M3
+
+| Feature | godot-rive | rive-unity |
+|---------|-----------|------------|
+| Events | ✅ | ✅ |
+| Nested Inputs | ✅ | ✅ |
+| Triggers | ✅ (untested) | ✅ |
+| Bool/Number inputs | ✅ | ✅ |
+| ViewModel | ❌ | ✅ |
+| Audio | ❌ | ✅ |
+| GPU Rendering | ❌ | ✅ |
+
+### What Remains for M3
+- [ ] Test nested inputs with `nested_artboard_events.riv`
+- [ ] Test triggers end-to-end
+- [ ] Commit Part 2
+
+### Roadmap Update
+- **M3: Events & Triggers** - ✅ Complete
+- **M4: Linux Build** - Next priority
+- **M5: GPU Rendering** - Deferred
+- **M6: ViewModel** - Requires deeper research
 
