@@ -35,13 +35,22 @@ env["STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME"] = True
 # Mismatch causes ABI incompatibility: wrong struct sizes, offset errors.
 # Reference: thirdparty/rive-runtime/out/debug/rive.make
 # =============================================================================
-env.Append(CPPDEFINES=[
+rive_defines = [
     "WITH_RIVE_TEXT",      # Enables text rendering support
     "WITH_RIVE_LAYOUT",    # Enables Yoga layout engine
-    "RIVE_MACOSX",         # Platform identifier (macOS builds)
     ("YOGA_EXPORT", ""),   # Empty define for Yoga export macro
     "_RIVE_INTERNAL_",     # Internal Rive APIs
-])
+]
+
+# Platform-specific identifier
+if env["platform"] == "macos":
+    rive_defines.append("RIVE_MACOSX")
+elif env["platform"] == "linux":
+    rive_defines.append("RIVE_LINUX")
+elif env["platform"] == "windows":
+    rive_defines.append("RIVE_WINDOWS")
+
+env.Append(CPPDEFINES=rive_defines)
 
 # NOTE: DEBUG/NDEBUG handling
 # - godot-cpp already defines NDEBUG for non-dev builds (including template_debug)
@@ -93,7 +102,11 @@ if env.get("platform") == "macos":
 SKIA_SRC_DIR = join(RIVE_RUNTIME_DIR, "skia/dependencies/skia")
 env.RequireFile(Dir(SKIA_SRC_DIR))
 
-# Determine Skia output directory based on platform and architecture
+# =============================================================================
+# Platform-specific Skia configuration
+# =============================================================================
+import os
+
 if env["platform"] == "macos":
     skia_out_dir = join(SKIA_SRC_DIR, "out/macosx/x64")
     # Fix for macOS Command Line Tools: add explicit C++ include path
@@ -109,23 +122,36 @@ if env["platform"] == "macos":
         "-framework", "ImageIO",  # For kCGImageProperty* symbols
     ])
     # Remove dead_strip and stripping flags to preserve Skia symbols
-    # -dead_strip: removes unused code sections
-    # -S: strip debug symbols
-    # -x: strip local symbols
     strip_flags = ["-Wl,-dead_strip", "-Wl,-S", "-Wl,-x"]
     env["LINKFLAGS"] = [f for f in env["LINKFLAGS"] if f not in strip_flags]
+    # macOS uses -force_load to pull in all object files
+    skia_lib_path = os.path.abspath(join(skia_out_dir, "libskia.a"))
+    env.Prepend(LINKFLAGS=["-Wl,-force_load," + skia_lib_path])
+
+elif env["platform"] == "linux":
+    skia_out_dir = join(SKIA_SRC_DIR, "out/linux/x64")
+    # Linux system libraries for Skia
+    env.Append(LIBS=["GL", "fontconfig", "freetype"])
+    # Linux uses --whole-archive to pull in all object files (equivalent to -force_load)
+    skia_lib_path = os.path.abspath(join(skia_out_dir, "libskia.a"))
+    env.Prepend(LINKFLAGS=[
+        "-Wl,--whole-archive",
+        skia_lib_path,
+        "-Wl,--no-whole-archive",
+    ])
+    # Ensure we link libstdc++ and math
+    env.Append(LIBS=["stdc++", "m", "pthread", "dl"])
+
 elif env["platform"] == "windows":
     skia_out_dir = join(SKIA_SRC_DIR, "out/windows/x64")
-else:
-    skia_out_dir = join(SKIA_SRC_DIR, "out/static")
+    skia_lib_path = os.path.abspath(join(skia_out_dir, "skia.lib"))
+    env.Prepend(LIBS=[skia_lib_path])
 
-# Add Skia library with force_load to ensure all symbols (including vtables) are preserved
-import os
-skia_lib_path = os.path.abspath(join(skia_out_dir, "libskia.a"))
-# Use -force_load to pull in all object files from libskia.a
-env.Prepend(
-    LINKFLAGS=["-Wl,-force_load," + skia_lib_path],
-)
+else:
+    # Fallback for unknown platforms
+    skia_out_dir = join(SKIA_SRC_DIR, "out/static")
+    skia_lib_path = os.path.abspath(join(skia_out_dir, "libskia.a"))
+    env.Prepend(LINKFLAGS=["-Wl,--whole-archive", skia_lib_path, "-Wl,--no-whole-archive"])
 
 env.Prepend(
     LIBPATH=[skia_out_dir],
