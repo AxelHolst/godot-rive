@@ -79,7 +79,9 @@ jobs:
         if: steps.cache-rive.outputs.cache-hit != 'true'
         working-directory: thirdparty/rive-runtime/skia/renderer
         run: |
-          # Uses premake5 built in previous step
+          # skia_renderer only supports --with_rive_text, not --with_rive_layout
+          # Set RIVE_PREMAKE_ARGS to override the default from build_rive.sh
+          export RIVE_PREMAKE_ARGS="--with_rive_text"
           ../../build/build_rive.sh
 
       - name: Verify rive-runtime libraries
