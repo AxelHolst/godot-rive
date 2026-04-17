@@ -29,9 +29,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: thirdparty/rive-runtime/out
-          key: rive-runtime-linux-x64-${{ hashFiles('thirdparty/rive-runtime/include/**', 'thirdparty/rive-runtime/src/**', 'thirdparty/rive-runtime/build/**') }}
+          # v2: Added --with-pic flag for shared library linking
+          key: rive-runtime-linux-x64-v2-${{ hashFiles('thirdparty/rive-runtime/include/**', 'thirdparty/rive-runtime/src/**', 'thirdparty/rive-runtime/build/**') }}
           restore-keys: |
-            rive-runtime-linux-x64-
+            rive-runtime-linux-x64-v2-
 
       - name: Install build dependencies
         if: steps.cache-rive.outputs.cache-hit != 'true'
@@ -64,7 +65,8 @@ jobs:
         working-directory: thirdparty/rive-runtime
         run: |
           # build_rive.sh builds premake5 from source and sets default flags
-          ./build/build_rive.sh
+          # --with-pic is required for linking into shared libraries on Linux
+          ./build/build_rive.sh --with-pic
 
       # Note: rive_skia_renderer is built in the gdextension job because it
       # needs Skia headers which are downloaded separately
@@ -275,7 +277,8 @@ jobs:
           ln -sf premake5_v2.lua premake5.lua
 
           # skia_renderer only supports --with_rive_text, not --with_rive_layout
-          export RIVE_PREMAKE_ARGS="--with_rive_text"
+          # --with-pic is required for linking into shared libraries on Linux
+          export RIVE_PREMAKE_ARGS="--with_rive_text --with-pic"
           ../../build/build_rive.sh
 
       - name: Build GDExtension
