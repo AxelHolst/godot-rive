@@ -31,6 +31,7 @@
 #include <skia/renderer/include/skia_renderer.hpp>
 
 // extension
+#include "api/rive_event.hpp"
 #include "api/rive_file.hpp"
 #include "rive_instance.hpp"
 #include "skia_instance.hpp"
@@ -69,6 +70,7 @@ class RiveViewerBase {
     void deferred_init();  // Called on first process frame, when bindings are definitely ready
     void check_scene_property_changed();
     bool advance(float delta);
+    void poll_events();
     PackedByteArray frame(float delta);
     PackedByteArray redraw();
 
@@ -203,6 +205,10 @@ class RiveViewerBase {
         PropertyInfo(Variant::STRING, "property"),                                               \
         PropertyInfo(Variant::VARIANT_MAX, "new_value"),                                         \
         PropertyInfo(Variant::VARIANT_MAX, "old_value")                                          \
+    ));                                                                                          \
+    ADD_SIGNAL(MethodInfo(                                                                       \
+        "rive_event",                                                                            \
+        PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_RESOURCE_TYPE, "RiveEvent")         \
     ));                                                                                          \
     BIND_GET(cls, elapsed_time);                                                                 \
     BIND_GET(cls, file);                                                                         \

@@ -118,7 +118,8 @@ class RiveFile : public Resource {
     }
 
     int get_artboard_count() const {
-        return artboards.get_size();
+        // Return actual rive::File artboard count, not cache size
+        return file ? static_cast<int>(file->artboardCount()) : 0;
     }
 
     Ref<RiveArtboard> get_artboard(int index) {

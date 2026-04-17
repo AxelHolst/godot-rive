@@ -29,7 +29,39 @@ env = SConscript("../godot-cpp/SConstruct")
 
 env["STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME"] = True
 
-# Enable C++ exceptions and RTTI - required for rive-runtime and Skia compatibility
+# =============================================================================
+# CRITICAL: Preprocessor defines MUST match librive.a build exactly!
+# These defines affect class memory layout (conditional member variables).
+# Mismatch causes ABI incompatibility: wrong struct sizes, offset errors.
+# Reference: thirdparty/rive-runtime/out/debug/rive.make
+# =============================================================================
+rive_defines = [
+    "WITH_RIVE_TEXT",      # Enables text rendering support
+    "WITH_RIVE_LAYOUT",    # Enables Yoga layout engine
+    ("YOGA_EXPORT", ""),   # Empty define for Yoga export macro
+    "_RIVE_INTERNAL_",     # Internal Rive APIs
+]
+
+# Platform-specific identifier
+if env["platform"] == "macos":
+    rive_defines.append("RIVE_MACOSX")
+elif env["platform"] == "linux":
+    rive_defines.append("RIVE_LINUX")
+elif env["platform"] == "windows":
+    rive_defines.append("RIVE_WINDOWS")
+
+env.Append(CPPDEFINES=rive_defines)
+
+# NOTE: DEBUG/NDEBUG handling
+# - godot-cpp already defines NDEBUG for non-dev builds (including template_debug)
+# - rive_types.hpp will auto-set DEBUG=1 if NDEBUG is not defined
+# - We do NOT manually set DEBUG to avoid conflict with godot-cpp's NDEBUG
+# For debug librive.a linking, the rive-runtime was built with DEBUG, but
+# ABI compatibility depends on struct layout defines (WITH_RIVE_*), not DEBUG/NDEBUG
+
+# Exception handling: Match librive.a build settings
+# librive.a is built with -fno-exceptions, but we need exceptions for Godot/GDExtension
+# RTTI is required for dynamic_cast in our wrapper code
 env.Append(CXXFLAGS=["-fexceptions", "-frtti"])
 env.Append(CFLAGS=["-fexceptions"])
 
@@ -38,11 +70,43 @@ sources = []
 # rive-runtime root directory
 RIVE_RUNTIME_DIR = "../thirdparty/rive-runtime"
 
+# =============================================================================
+# CRITICAL: Force-include headers for symbol renaming
+# These MUST be included before any Rive/HarfBuzz/Yoga headers to rename symbols
+# and avoid ODR violations. Matches: rive.make FORCE_INCLUDE directive.
+# =============================================================================
+RIVE_DEPS_DIR = join(RIVE_RUNTIME_DIR, "dependencies")
+env.Append(CXXFLAGS=[
+    "-include", join(RIVE_DEPS_DIR, "rive_harfbuzz_renames.h"),
+    "-include", join(RIVE_DEPS_DIR, "rive_yoga_renames.h"),
+])
+env.Append(CFLAGS=[
+    "-include", join(RIVE_DEPS_DIR, "rive_harfbuzz_renames.h"),
+    "-include", join(RIVE_DEPS_DIR, "rive_yoga_renames.h"),
+])
+
+# =============================================================================
+# macOS-specific flags to match librive.a build exactly
+# Reference: thirdparty/rive-runtime/out/debug/rive.make ALL_CXXFLAGS
+# =============================================================================
+if env.get("platform") == "macos":
+    # Objective-C ARC (Automatic Reference Counting) - required for Apple frameworks
+    env.Append(CXXFLAGS=["-fobjc-arc"])
+    env.Append(CFLAGS=["-fobjc-arc"])
+    # macOS deployment target - must match librive.a build
+    env.Append(CXXFLAGS=["-mmacosx-version-min=11.0"])
+    env.Append(CFLAGS=["-mmacosx-version-min=11.0"])
+    env.Append(LINKFLAGS=["-mmacosx-version-min=11.0"])
+
 # Add skia library
 SKIA_SRC_DIR = join(RIVE_RUNTIME_DIR, "skia/dependencies/skia")
 env.RequireFile(Dir(SKIA_SRC_DIR))
 
-# Determine Skia output directory based on platform and architecture
+# =============================================================================
+# Platform-specific Skia configuration
+# =============================================================================
+import os
+
 if env["platform"] == "macos":
     skia_out_dir = join(SKIA_SRC_DIR, "out/macosx/x64")
     # Fix for macOS Command Line Tools: add explicit C++ include path
@@ -58,25 +122,36 @@ if env["platform"] == "macos":
         "-framework", "ImageIO",  # For kCGImageProperty* symbols
     ])
     # Remove dead_strip and stripping flags to preserve Skia symbols
-    # -dead_strip: removes unused code sections
-    # -S: strip debug symbols
-    # -x: strip local symbols
     strip_flags = ["-Wl,-dead_strip", "-Wl,-S", "-Wl,-x"]
     env["LINKFLAGS"] = [f for f in env["LINKFLAGS"] if f not in strip_flags]
-    print("DEBUG: LINKFLAGS after dead_strip removal:", env["LINKFLAGS"])
+    # macOS uses -force_load to pull in all object files
+    skia_lib_path = os.path.abspath(join(skia_out_dir, "libskia.a"))
+    env.Prepend(LINKFLAGS=["-Wl,-force_load," + skia_lib_path])
+
+elif env["platform"] == "linux":
+    skia_out_dir = join(SKIA_SRC_DIR, "out/linux/x64")
+    # Linux system libraries for Skia
+    env.Append(LIBS=["GL", "fontconfig", "freetype"])
+    # Linux uses --whole-archive to pull in all object files (equivalent to -force_load)
+    skia_lib_path = os.path.abspath(join(skia_out_dir, "libskia.a"))
+    env.Prepend(LINKFLAGS=[
+        "-Wl,--whole-archive",
+        skia_lib_path,
+        "-Wl,--no-whole-archive",
+    ])
+    # Ensure we link libstdc++ and math
+    env.Append(LIBS=["stdc++", "m", "pthread", "dl"])
+
 elif env["platform"] == "windows":
     skia_out_dir = join(SKIA_SRC_DIR, "out/windows/x64")
-else:
-    skia_out_dir = join(SKIA_SRC_DIR, "out/static")
+    skia_lib_path = os.path.abspath(join(skia_out_dir, "skia.lib"))
+    env.Prepend(LIBS=[skia_lib_path])
 
-# Add Skia library with force_load to ensure all symbols (including vtables) are preserved
-import os
-skia_lib_path = os.path.abspath(join(skia_out_dir, "libskia.a"))
-print("DEBUG: Skia lib path:", skia_lib_path)
-# Use -force_load to pull in all object files from libskia.a
-env.Prepend(
-    LINKFLAGS=["-Wl,-force_load," + skia_lib_path],
-)
+else:
+    # Fallback for unknown platforms
+    skia_out_dir = join(SKIA_SRC_DIR, "out/static")
+    skia_lib_path = os.path.abspath(join(skia_out_dir, "libskia.a"))
+    env.Prepend(LINKFLAGS=["-Wl,--whole-archive", skia_lib_path, "-Wl,--no-whole-archive"])
 
 env.Prepend(
     LIBPATH=[skia_out_dir],

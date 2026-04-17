@@ -1,0 +1,300 @@
+name: Build Linux x86_64
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+jobs:
+  # =============================================================================
+  # Job 1: Build rive-runtime libraries for Linux
+  # This is the expensive step (~30 min) - heavily cached
+  # =============================================================================
+  build-rive-runtime:
+    name: Build rive-runtime (Linux x86_64)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Cache rive-runtime compiled libraries (core only, not skia_renderer)
+      # Key includes hash of rive-runtime source to invalidate on updates
+      - name: Cache rive-runtime libraries
+        id: cache-rive
+        uses: actions/cache@v4
+        with:
+          path: thirdparty/rive-runtime/out
+          # v2: Added --with-pic flag for shared library linking
+          key: rive-runtime-linux-x64-v2-${{ hashFiles('thirdparty/rive-runtime/include/**', 'thirdparty/rive-runtime/src/**', 'thirdparty/rive-runtime/build/**') }}
+          restore-keys: |
+            rive-runtime-linux-x64-v2-
+
+      - name: Install build dependencies
+        if: steps.cache-rive.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            lld \
+            ninja-build \
+            python3 \
+            git
+
+      # Note: build_rive.sh builds premake5 from source automatically (v5.0.0-beta7)
+      # It also sets --with_rive_text --with_rive_layout by default
+      # The symlinks below are needed for premake5 to find the build config files
+
+      - name: Create required symlinks for rive-runtime
+        if: steps.cache-rive.outputs.cache-hit != 'true'
+        working-directory: thirdparty/rive-runtime
+        run: |
+          # Create symlinks in rive-runtime root (required for premake5 to find config)
+          ln -sf build/rive_build_config.lua rive_build_config.lua
+          ln -sf build/setup_compiler.lua setup_compiler.lua
+          ln -sf build/dependency.lua dependency.lua
+          ln -sf premake5_v2.lua premake5.lua
+
+      - name: Build rive-runtime core libraries
+        if: steps.cache-rive.outputs.cache-hit != 'true'
+        working-directory: thirdparty/rive-runtime
+        run: |
+          # build_rive.sh builds premake5 from source and sets default flags
+          # --with-pic is required for linking into shared libraries on Linux
+          ./build/build_rive.sh --with-pic
+
+      # Note: rive_skia_renderer is built in the gdextension job because it
+      # needs Skia headers which are downloaded separately
+
+      - name: Verify rive-runtime libraries
+        run: |
+          echo "=== Checking rive-runtime libraries ==="
+          ls -la thirdparty/rive-runtime/out/debug/ || echo "No debug output"
+
+      - name: Upload rive-runtime libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: rive-runtime-linux-x64
+          path: thirdparty/rive-runtime/out/
+          retention-days: 7
+
+  # =============================================================================
+  # Job 2: Build Skia for Linux
+  # Also expensive (~20 min) - cached separately
+  # =============================================================================
+  build-skia:
+    name: Build Skia (Linux x86_64)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Cache Skia - includes both out/ (build) and include/ (headers)
+      - name: Cache Skia
+        id: cache-skia
+        uses: actions/cache@v4
+        with:
+          path: |
+            thirdparty/rive-runtime/skia/dependencies/skia/out
+            thirdparty/rive-runtime/skia/dependencies/skia/include
+          # v2: Removed -flto=full from build flags for linker compatibility
+          key: skia-linux-x64-v2-${{ hashFiles('thirdparty/rive-runtime/skia/dependencies/get_skia*.sh', 'thirdparty/rive-runtime/skia/dependencies/make_skia*.sh') }}
+          restore-keys: |
+            skia-linux-x64-v2-
+
+      - name: Install Skia build dependencies
+        if: steps.cache-skia.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            lld \
+            ninja-build \
+            python3 \
+            git \
+            libgl1-mesa-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev
+
+      - name: Build Skia for Linux
+        if: steps.cache-skia.outputs.cache-hit != 'true'
+        working-directory: thirdparty/rive-runtime/skia/dependencies
+        run: |
+          # Use get_skia.sh which properly clones and syncs Skia
+          # This clones both skia_rive_optimized and skia repos
+          ./get_skia.sh
+
+          cd skia
+
+          # Generate build files for Linux x64
+          bin/gn gen out/linux/x64 --type=static_library --args='
+            target_os="linux"
+            target_cpu="x64"
+            is_official_build=true
+            cc="clang"
+            cxx="clang++"
+            extra_cflags=["-fno-rtti"]
+
+            skia_use_freetype=true
+            skia_use_system_freetype2=false
+            skia_use_fontconfig=false
+            skia_use_zlib=true
+            skia_use_system_zlib=false
+            skia_enable_gpu=true
+            skia_use_gl=true
+            skia_use_vulkan=false
+            skia_use_metal=false
+
+            skia_use_libpng_encode=true
+            skia_use_libpng_decode=true
+            skia_use_system_libpng=false
+            skia_use_libjpeg_turbo_encode=false
+            skia_use_libjpeg_turbo_decode=true
+            skia_use_system_libjpeg_turbo=false
+            skia_use_libwebp_encode=false
+            skia_use_libwebp_decode=true
+            skia_use_system_libwebp=false
+
+            skia_use_angle=false
+            skia_use_dng_sdk=false
+            skia_use_egl=false
+            skia_use_expat=false
+            skia_use_icu=false
+            skia_use_libheif=false
+            skia_use_lua=false
+            skia_use_piex=false
+            skia_enable_fontmgr_empty=false
+            skia_enable_spirv_validation=false
+            skia_enable_pdf=false
+            skia_enable_skottie=false
+            skia_enable_tools=false
+          '
+
+          # Build only libskia.a (skip examples and tools)
+          ninja -C out/linux/x64 libskia.a
+
+      - name: Verify Skia build
+        run: |
+          echo "=== Checking Skia libraries ==="
+          ls -la thirdparty/rive-runtime/skia/dependencies/skia/out/linux/x64/ || echo "No Skia output"
+          echo "=== Checking Skia headers ==="
+          ls thirdparty/rive-runtime/skia/dependencies/skia/include/core/ | head -5 || echo "No headers"
+
+      # Upload Skia - we need to preserve directory structure for both out/ and include/
+      # Upload from skia root to maintain paths relative to skia/
+      - name: Upload Skia library and headers
+        uses: actions/upload-artifact@v4
+        with:
+          name: skia-linux-x64
+          path: |
+            thirdparty/rive-runtime/skia/dependencies/skia/out/
+            thirdparty/rive-runtime/skia/dependencies/skia/include/
+          retention-days: 7
+
+  # =============================================================================
+  # Job 3: Build GDExtension
+  # Depends on rive-runtime and Skia being ready
+  # =============================================================================
+  build-gdextension:
+    name: Build GDExtension (Linux x86_64)
+    runs-on: ubuntu-22.04
+    needs: [build-rive-runtime, build-skia]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download rive-runtime libraries
+        uses: actions/download-artifact@v4
+        with:
+          name: rive-runtime-linux-x64
+          path: thirdparty/rive-runtime/out/
+
+      - name: Download Skia library and headers
+        uses: actions/download-artifact@v4
+        with:
+          name: skia-linux-x64
+          path: thirdparty/rive-runtime/skia/dependencies/skia/
+
+      - name: Verify downloaded artifacts
+        run: |
+          echo "=== rive-runtime libraries ==="
+          find thirdparty/rive-runtime -name "*.a" -type f
+          echo "=== Skia library ==="
+          ls -la thirdparty/rive-runtime/skia/dependencies/skia/out/linux/x64/ || echo "Missing"
+          echo "=== Skia headers ==="
+          ls thirdparty/rive-runtime/skia/dependencies/skia/include/core/ | head -5 || echo "Missing headers"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            scons \
+            python3 \
+            clang \
+            lld \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxi-dev
+
+      - name: Cache godot-cpp
+        id: cache-godot-cpp
+        uses: actions/cache@v4
+        with:
+          path: godot-cpp/bin
+          key: godot-cpp-linux-x64-${{ hashFiles('godot-cpp/**') }}
+          restore-keys: |
+            godot-cpp-linux-x64-
+
+      - name: Build godot-cpp
+        if: steps.cache-godot-cpp.outputs.cache-hit != 'true'
+        working-directory: godot-cpp
+        run: |
+          scons platform=linux target=template_debug arch=x86_64 -j$(nproc)
+
+      - name: Create symlinks and build rive_skia_renderer
+        working-directory: thirdparty/rive-runtime/skia/renderer
+        run: |
+          # Create symlinks needed for premake5
+          ln -sf ../../build/rive_build_config.lua rive_build_config.lua
+          ln -sf ../../build/setup_compiler.lua setup_compiler.lua
+          ln -sf ../../build/dependency.lua dependency.lua
+          ln -sf premake5_v2.lua premake5.lua
+
+          # skia_renderer only supports --with_rive_text, not --with_rive_layout
+          # --with-pic is required for linking into shared libraries on Linux
+          export RIVE_PREMAKE_ARGS="--with_rive_text --with-pic"
+          ../../build/build_rive.sh
+
+      - name: Build GDExtension
+        working-directory: build
+        run: |
+          scons platform=linux target=template_debug arch=x86_64 -j$(nproc)
+
+      - name: Verify GDExtension build
+        run: |
+          echo "=== GDExtension output ==="
+          ls -la demo/bin/ || echo "No output"
+          file demo/bin/*.so 2>/dev/null || echo "No .so files"
+
+      - name: Upload GDExtension
+        uses: actions/upload-artifact@v4
+        with:
+          name: librive-linux-x86_64-debug
+          path: demo/bin/librive.linux.template_debug.x86_64.so
+          retention-days: 30
