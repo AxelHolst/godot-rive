@@ -96,13 +96,13 @@ void RiveViewerBase::deferred_init() {
     if (initialized) return;
     initialized = true;  // Now safe to process callbacks that create Ref<> objects
 
-    UtilityFunctions::print("[RiveViewer] deferred_init() starting...");
+    RIVE_DEBUG_LOG("[RiveViewer] deferred_init() starting...");
 
     // Deferred file loading - if a file path was set during scene loading,
     // we couldn't load it then because bindings weren't ready. Load it now.
     if (pending_file_load && !props.path().is_empty()) {
         pending_file_load = false;
-        UtilityFunctions::print("[RiveViewer] Loading deferred file: ", props.path());
+        RIVE_DEBUG_LOG("[RiveViewer] Loading deferred file: ", props.path());
         load_rive_file(props.path());
     }
 
@@ -111,8 +111,8 @@ void RiveViewerBase::deferred_init() {
     int scene_idx = pending_property_values.has("scene") ? (int)pending_property_values["scene"] : -1;
     int animation_idx = pending_property_values.has("animation") ? (int)pending_property_values["animation"] : -1;
 
-    UtilityFunctions::print("[RiveViewer] Pending indices from .tscn - artboard: ", artboard_idx,
-                           ", scene: ", scene_idx, ", animation: ", animation_idx);
+    RIVE_DEBUG_LOG("[RiveViewer] Pending indices from .tscn - artboard: ", artboard_idx,
+                   ", scene: ", scene_idx, ", animation: ", animation_idx);
 
     // ========================================================================
     // SAFE DEFAULTS: Auto-select first artboard/scene if file exists but indices are -1
@@ -120,12 +120,12 @@ void RiveViewerBase::deferred_init() {
     // prevent any content from rendering.
     // ========================================================================
     if (exists(inst.file)) {
-        UtilityFunctions::print("[RiveViewer] File loaded: ", inst.file->get_artboard_count(), " artboard(s)");
+        RIVE_DEBUG_LOG("[RiveViewer] File loaded: ", inst.file->get_artboard_count(), " artboard(s)");
 
         // Auto-select artboard 0 if none selected and artboards exist
         if (artboard_idx == -1 && inst.file->get_artboard_count() > 0) {
             artboard_idx = 0;
-            UtilityFunctions::print("[RiveViewer] SAFE DEFAULT: Auto-selecting artboard 0");
+            RIVE_DEBUG_LOG("[RiveViewer] SAFE DEFAULT: Auto-selecting artboard 0");
         }
     }
 
@@ -137,14 +137,14 @@ void RiveViewerBase::deferred_init() {
     // Now check for scene/animation defaults after artboard is set
     auto artboard = inst.artboard();
     if (exists(artboard)) {
-        UtilityFunctions::print("[RiveViewer] Artboard '", artboard->get_name(), "' has ",
-                               artboard->get_scene_count(), " scene(s), ",
-                               artboard->get_animation_count(), " animation(s)");
+        RIVE_DEBUG_LOG("[RiveViewer] Artboard '", artboard->get_name(), "' has ",
+                       artboard->get_scene_count(), " scene(s), ",
+                       artboard->get_animation_count(), " animation(s)");
 
         // Auto-select scene 0 if no scene AND no animation selected, and scenes exist
         if (scene_idx == -1 && animation_idx == -1 && artboard->get_scene_count() > 0) {
             scene_idx = 0;
-            UtilityFunctions::print("[RiveViewer] SAFE DEFAULT: Auto-selecting scene 0");
+            RIVE_DEBUG_LOG("[RiveViewer] SAFE DEFAULT: Auto-selecting scene 0");
         }
     }
 
@@ -159,11 +159,11 @@ void RiveViewerBase::deferred_init() {
     pending_property_values.clear();
 
     // Final diagnostic log
-    UtilityFunctions::print("[RiveViewer] FINAL STATE - artboard: ", props.artboard(),
-                           ", scene: ", props.scene(), ", animation: ", props.animation());
-    UtilityFunctions::print("[RiveViewer] Objects - File: ", exists(inst.file) ? "OK" : "NULL",
-                           ", Artboard: ", exists(inst.artboard()) ? "OK" : "NULL",
-                           ", Scene: ", exists(inst.scene()) ? "OK" : "NULL");
+    RIVE_DEBUG_LOG("[RiveViewer] FINAL STATE - artboard: ", props.artboard(),
+                   ", scene: ", props.scene(), ", animation: ", props.animation());
+    RIVE_DEBUG_LOG("[RiveViewer] Objects - File: ", exists(inst.file) ? "OK" : "NULL",
+                   ", Artboard: ", exists(inst.artboard()) ? "OK" : "NULL",
+                   ", Scene: ", exists(inst.scene()) ? "OK" : "NULL");
 
     props.size(width(), height());
 }

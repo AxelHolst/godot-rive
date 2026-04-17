@@ -9,6 +9,13 @@
 #define GDPRINTS godot::UtilityFunctions::prints
 #define GDERR godot::UtilityFunctions::printerr
 
+/* Debug logging - define RIVE_DEBUG_LOGGING=1 to enable verbose diagnostics */
+#ifdef RIVE_DEBUG_LOGGING
+#define RIVE_DEBUG_LOG(...) godot::UtilityFunctions::print(__VA_ARGS__)
+#else
+#define RIVE_DEBUG_LOG(...) ((void)0)
+#endif
+
 /* Binding */
 
 #define BIND_GET(cls, prop_name) ClassDB::bind_method(D_METHOD("get_" #prop_name), &cls::get_##prop_name);

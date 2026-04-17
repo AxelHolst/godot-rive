@@ -1,18 +1,18 @@
 # Godot Rive
 
-### An integration of Rive into Godot 4.1+ using GDExtension
+### An integration of Rive into Godot 4.6+ using GDExtension
 
-> [!WARNING]
-> This extension is in **alpha**. That means:
-> * You may encounter some bugs
-> * It's untested on many platforms
-> * Most features are implemented, but the API may change a little
+> [!NOTE]
+> **v0.2.0** - This extension now supports:
+> * macOS x86_64 and Linux x86_64
+> * Rive Events and Nested Artboard Inputs
+> * Full `rive-runtime` integration (migrated from deprecated `rive-cpp`)
 
-This extensions adds [Rive](https://rive.app) support to Godot 4.
+This extension adds [Rive](https://rive.app) support to Godot 4.6+.
 
 It makes use of the following third-party libraries:
-- [`rive-cpp`](https://github.com/rive-app/rive-cpp)
-- [`skia`](https://github.com/google/skia) (included in `rive-cpp`)
+- [`rive-runtime`](https://github.com/rive-app/rive-runtime) (migrated from `rive-cpp`)
+- [`skia`](https://github.com/google/skia) (bundled with rive-runtime)
 
 ## Table of Contents
 
@@ -26,15 +26,17 @@ It makes use of the following third-party libraries:
 ## Features
 
 * Load `.riv` files (artboards, animations, and state machines)
-* Listen for input events
+* **Rive Events** - Receive events from Rive files via signals
+* **Nested Artboard Inputs** - Control inputs inside nested artboards
+* **Trigger inputs** - Fire triggers, not just bool/number inputs
+* Listen for input events (hover, pressed, etc.)
 * Change state machine properties in-editor and in code
 * Robust API for runtime interaction
-* Optimized for Godot
 
 ## Building
 
 > [!IMPORTANT]
-> These instructions are only tested on M1 MacOS. You may have to modify `build/build.py` or `build/SConstruct` for your system.
+> Building locally is tested on macOS (Intel/M1). For Linux, use the GitHub Actions workflow (`.github/workflows/build-linux.yml`).
 
 The following must be installed:
 - Python 3
@@ -56,8 +58,7 @@ python build.py --help
 ## Installation
 
 > [!IMPORTANT]
-> If you are not on M1 MacOS, you will need to build the extension yourself. Binaries are only provided for MacOS universal (debug and release).
-> Eventually, binaries will be provided for other platforms.
+> Pre-built binaries are available for macOS x86_64 and Linux x86_64. For other platforms, you will need to build the extension yourself.
 
 1. Copy `demo/bin/`, `demo/icons/`, and `demo/rive.gdextension` to your project folder
 2. Update the paths in `rive.gdextension` to match your project folder structure
@@ -77,18 +78,23 @@ python build.py --help
 - [x] Optimization
 - [x] Static editor preview
 - [x] Animated editor preview
+- [x] **Rive Events** (v0.2.0)
+- [x] **Nested Artboard Inputs** (v0.2.0)
+- [x] **Trigger inputs** (v0.2.0)
+- [x] **Linux x86_64 support** (v0.2.0)
+- [ ] GPU rendering (RenderingDevice or Rive Renderer)
+- [ ] ViewModel/Data Binding
+- [ ] Audio support
 - [ ] Add reset button
 - [ ] `.riv` ResourceLoader (thumbnails)
-- [ ] Other platform support
-- [ ] Any missing features
+- [ ] Windows, Android, iOS, Web support
 
 ## Contributing
 
-Help would be MUCH appreciated testing and/or building for the following platforms:
+Help would be appreciated testing and/or building for the following platforms:
 * Windows
 * Android
 * iOS
-* Linux
 * Web
 
 Feel free to contribute bug fixes (see open issues), documentation, or features as well.

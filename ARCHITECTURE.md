@@ -2,7 +2,7 @@
 
 This document describes the technical architecture of the godot-rive GDExtension.
 
-**Last Updated**: April 15, 2026 (Post-Migration to rive-runtime)
+**Last Updated**: April 17, 2026 (Phase II Complete - Renaissance Release)
 
 ---
 
@@ -154,14 +154,15 @@ Based on detailed comparison with `rive-unity`, the following gaps were identifi
 | Trigger inputs | `RiveInput::fire()` method |
 | Mouse interaction | `pointerMove/Down/Up` via `RiveScene` |
 | Fit/Alignment | `rive::computeAlignment()` |
+| Rive Events | `rive_event` signal with `RiveEvent` resource |
+| Nested artboard inputs | `set_input("Path/Name", value)` path syntax |
+| Cross-platform builds | macOS local, Linux CI |
 
 ### Missing Features (Prioritized) 🔴
 
 | Feature | rive-unity Reference | rive-runtime API | Priority |
 |---------|---------------------|------------------|----------|
-| **Rive Events** | `StateMachine.ReportedEvents()` | `reportedEventCount()` / `reportedEventAt()` | M3 |
-| **Event Signals** | Callback delegates | N/A (custom implementation) | M3 |
-| **Nested Input Paths** | `Artboard.*AtPath()` methods | `getSMIInputAtPathArtboard()` (native) | M3 |
+| **GPU Rendering** | Metal/Vulkan backends | RenderingDevice integration | M5 |
 | **ViewModel** | `ViewModelInstance` (800+ LOC) | `ViewModelInstance::propertyValue()` | M6 |
 | **Data Binding** | `BindViewModelInstance()` | `bindViewModelInstanceToStateMachine()` | M6 |
 | **Luau Scripting** | `WITH_RIVE_TOOLS` flag | `rive_luau.hpp` | M7 |
@@ -218,8 +219,8 @@ New class: RiveViewModelInstance (RefCounted)
 
 1. **Full Feature Parity with rive-unity**
    - ✅ Trigger inputs (implemented)
-   - 🔲 Rive Events (M3)
-   - 🔲 Nested artboard inputs (M3)
+   - ✅ Rive Events (M3 complete)
+   - ✅ Nested artboard inputs (M3 complete)
    - 🔲 ViewModel / Data Binding (M6)
    - 🔲 Scripting (Luau) (M7)
    - 🔲 Audio (M8)
@@ -229,9 +230,9 @@ New class: RiveViewModelInstance (RefCounted)
    - Option 2: Rive Renderer → Godot RenderingDevice
    - Fallback: CPU rendering for compatibility
 
-3. **Cross-Platform Support** (M4)
-   - ✅ macOS x86_64
-   - 🔲 Linux x86_64 (priority)
+3. **Cross-Platform Support** (M4 Complete)
+   - ✅ macOS x86_64 (local build)
+   - ✅ Linux x86_64 (CI build with caching)
    - 🔲 macOS ARM64
    - 🔲 Windows x86_64
 
@@ -250,15 +251,43 @@ New class: RiveViewModelInstance (RefCounted)
 ### Build Commands
 
 ```bash
-cd build
-python build.py --platform=linux --target=debug    # Linux debug
-python build.py --platform=macosx --target=release # macOS release
+# Local macOS build
+cd build && scons platform=macos target=template_debug arch=x86_64
+
+# Linux build (via CI)
+# See .github/workflows/build-linux.yml
+# Artifacts available at GitHub Actions
+
+# Manual Linux build (requires rive-runtime + Skia pre-built)
+cd build && scons platform=linux target=template_debug arch=x86_64
+```
+
+### CI/CD Pipeline (Linux)
+
+```
+┌─────────────────┐  ┌─────────────────┐
+│ build-rive-     │  │ build-skia      │
+│ runtime (5min)  │  │ (cached/20min)  │
+└────────┬────────┘  └────────┬────────┘
+         │                    │
+         └────────┬───────────┘
+                  ▼
+         ┌────────────────┐
+         │ build-         │
+         │ gdextension    │
+         │ (7min)         │
+         └────────┬───────┘
+                  ▼
+         ┌────────────────┐
+         │ librive.linux  │
+         │ .so artifact   │
+         └────────────────┘
 ```
 
 ### Output Locations
 
 - macOS: `demo/bin/librive.macos.template_*.framework/`
-- Linux: `demo/bin/librive.linux.template_*`
+- Linux: `demo/bin/librive.linux.template_*.so`
 - Windows: `demo/bin/librive.windows.template_*.dll`
 
 ---

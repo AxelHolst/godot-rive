@@ -1014,50 +1014,91 @@ Standalone macOS export now renders correctly with animated circles.
 
 ---
 
-## Milestone 4: Linux Build - Planning
+## 2026-04-17: Milestone 4 Complete - Linux Build Infrastructure
 
-### Challenge
-We need to build the GDExtension for Linux x86_64 from a macOS host.
+### Summary
+Full CI/CD pipeline for Linux x86_64 builds implemented via GitHub Actions.
 
-### Dependencies Required for Linux
-1. **librive.a** (Linux x86_64) - Must be cross-compiled or built on Linux
-2. **librive_skia_renderer.a** (Linux x86_64)
-3. **librive_harfbuzz.a** (Linux x86_64)
-4. **librive_sheenbidi.a** (Linux x86_64)
-5. **librive_yoga.a** (Linux x86_64)
-6. **libskia.a** (Linux x86_64)
-7. **libgodot-cpp.a** (Linux x86_64)
+### Implementation
 
-### Approach Options
+**Workflow:** `.github/workflows/build-linux.yml`
 
-**Option A: GitHub Actions CI**
-- Build rive-runtime and GDExtension in a Linux container
-- Most reliable, matches real deployment environment
-- Can cache built libraries between runs
+**Build Steps:**
+1. Checkout repository with submodules
+2. Install dependencies: premake5, ninja, clang
+3. Build Skia (cached after first build)
+4. Build rive-runtime libraries (librive.a, librive_harfbuzz.a, etc.)
+5. Build godot-cpp for Linux
+6. Build GDExtension with scons
+7. Upload artifact: `librive.linux.template_debug.x86_64.so`
 
-**Option B: Docker on macOS**
-- Run a Linux container locally for compilation
-- Faster iteration than CI
-- Requires Docker Desktop
+**Caching Strategy:**
+- Skia cache key: `skia-linux-x64-v2-{hash}`
+- rive-runtime cache key: `rive-linux-x64-v3-{hash}`
+- Cache hit reduces build time from ~25min to ~5min
 
-**Option C: Cross-compilation toolchain**
-- Use clang with Linux target triple
-- Most complex setup
-- May have issues with system library compatibility
+**Key Technical Fixes:**
+1. **`-fPIC` flag** - Required for shared library linking on Linux
+2. **`_NOEXCEPT` → `noexcept`** - macOS-specific macro replaced with standard C++
+3. **Skia LTO disabled** - `-flto=full` caused linker issues, removed for compatibility
 
-### Recommended: GitHub Actions (Option A)
+### Build Times
+| Step | First Run | Cached |
+|------|-----------|--------|
+| Build Skia | ~20min | 21s |
+| Build rive-runtime | ~5min | ~5min |
+| Build GDExtension | ~7min | ~7min |
+| **Total** | ~25min | ~5min |
 
-1. Create `.github/workflows/build-linux.yml`
-2. Use Ubuntu runner
-3. Install dependencies: premake5, ninja, clang
-4. Build rive-runtime libraries
-5. Build godot-cpp
-6. Build GDExtension
-7. Upload artifacts
+### Artifact
+```
+librive-linux-x86_64-debug/
+└── librive.linux.template_debug.x86_64.so (Linux shared library)
+```
 
-### Next Steps
-1. Research rive-runtime's Linux build process
-2. Create initial GitHub Actions workflow
-3. Test first compilation
-4. Iterate on missing dependencies
+### Verification
+- CI run #24560834423: SUCCESS
+- Skia cache hit confirmed
+- Artifact uploaded successfully
+
+---
+
+## Milestone Status Summary
+
+| Milestone | Status | Description |
+|-----------|--------|-------------|
+| M1: Core Migration | ✅ Complete | rive-cpp → rive-runtime |
+| M2: Smoke Test | ✅ Complete | Rendering verified |
+| M3: Events & Nested Inputs | ✅ Complete | RiveEvent, nested paths, triggers |
+| M4: Linux Build | ✅ Complete | CI/CD pipeline, pre-built artifacts |
+| **M5: GPU Rendering** | ⏳ Next | RenderingDevice or Rive Renderer |
+| M6: ViewModel/Binding | ⏳ Pending | Data-driven animations |
+| M7: Rive Scripting | ⏳ Pending | Luau VM integration |
+| M8: Audio | ⏳ Pending | Rive audio → Godot bridge |
+
+---
+
+## Phase II Complete - v0.2.0 Released
+
+### Achievements
+- **macOS x86_64** - Local builds working
+- **Linux x86_64** - CI/CD pipeline with caching
+- **Rive Events** - Full event system with properties
+- **Nested Inputs** - Path-based input control
+- **Trigger inputs** - Fire triggers via API
+- **Standalone exports** - Pink screen bug fixed
+- **ABI alignment** - Matches librive.a exactly
+
+### Files Modified in Phase II
+| Category | Files |
+|----------|-------|
+| Source | `rive_viewer_base.cpp`, `rive_file.hpp`, `rive_artboard.hpp`, `rive_scene.hpp`, `rive_event.hpp` (new) |
+| Build | `SConstruct`, `.github/workflows/build-linux.yml` (new) |
+| Docs | `CHANGELOG.md`, `ARCHITECTURE.md`, `README.md`, `DEVELOPMENT_LOG.md`, `CLAUDE.md` |
+
+### Next: Milestone 5 (GPU Rendering)
+Research Godot's RenderingDevice API and evaluate:
+1. Skia GPU backend via RenderingDevice
+2. Rive Renderer (native GPU renderer)
+3. Performance benchmarks CPU vs GPU
 

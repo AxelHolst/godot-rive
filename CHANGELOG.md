@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned (Roadmap)
+- **M5: GPU Rendering** - RenderingDevice or Rive Renderer integration
+- **M6: ViewModel/Data Binding** - Unity parity for data-driven animations
+- **M7: Luau Scripting** - Script execution inside Rive files
+- **M8: Audio** - Rive audio → Godot AudioStreamPlayer bridge
+
+---
+
+## [0.2.0] - 2026-04-17
+
+Production-ready macOS and Linux builds with full rive-runtime integration.
+
 ### Added
+- **Linux x86_64 Support (M4)** - Full CI/CD pipeline for Linux builds
+  - GitHub Actions workflow with caching (~5min builds after initial ~25min)
+  - Pre-built artifacts: `librive.linux.template_debug.x86_64.so`
+  - Position-independent code (`-fPIC`) for shared library compatibility
 - **Rive Events (M3)** - Full event system with `rive_event` signal and `RiveEvent` class
   - `RiveEvent.name` - Event name
   - `RiveEvent.seconds_delay` - Time offset from frame start
@@ -18,10 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RiveScene.get_input_value("NestedArtboard/InputName")` - Get nested input value
   - `RiveScene.fire("NestedArtboard/TriggerName")` - Fire nested triggers
   - Explicit methods: `set_bool_at_path()`, `set_number_at_path()`, `fire_trigger_at_path()`
-- **Trigger input API** - `RiveInput::is_trigger()` and `RiveInput::fire()` methods (untested)
+- **Trigger input API** - `RiveInput::is_trigger()` and `RiveInput::fire()` methods
+- **Debug logging macro** - `RIVE_DEBUG_LOG` conditionally compiled via `RIVE_DEBUG_LOGGING`
 - Project governance files (CHANGELOG.md, DEVELOPMENT_LOG.md, ARCHITECTURE.md)
-- Established `develop` branch for ongoing development
-- Test scenes for debugging (test_minimal.tscn, test_ghost.tscn, etc.)
 - Comprehensive API migration guide (docs/API_MIGRATION.md)
 
 ### Changed
@@ -30,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated for Godot 4.6.2 compatibility
 - `rive::File` now uses `rcp<>` (reference-counted) instead of `unique_ptr`
 - `RiveListener::get_type()` now uses `hasListener()` checks instead of removed `listenerType()`
+- Replaced macOS-specific `_NOEXCEPT` with standard C++ `noexcept` for cross-platform builds
 
 ### Fixed
 - **Standalone export "pink screen" (M3)** - Fixed count methods returning cache size instead of actual Rive counts
@@ -40,25 +56,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RiveScene.get_listener_count()` now calls `scene->stateMachine()->listenerCount()`
 - **ABI alignment with librive.a** - SConstruct now matches rive.make build flags exactly
   - Force-include headers for HarfBuzz/Yoga symbol renaming (prevents ODR violations)
-  - Preprocessor defines: `WITH_RIVE_TEXT`, `WITH_RIVE_LAYOUT`, `RIVE_MACOSX`, `_RIVE_INTERNAL_`
+  - Preprocessor defines: `WITH_RIVE_TEXT`, `WITH_RIVE_LAYOUT`, platform flags
   - macOS flags: `-fobjc-arc`, `-mmacosx-version-min=11.0`
 - **Scene loading crash** - Added deferred initialization to prevent binding callbacks during scene load
 - **SkCanvas crash** - Removed `-DRIVE_OPTIMIZED` flag that stubbed out Skia constructors
 - **macOS build** - Added C++ header workaround for Command Line Tools
+- **Linux build** - Removed Skia LTO (`-flto=full`) for linker compatibility
 
-### Needs Testing
-- [x] Rive Events (tested with nested_artboard_events.riv)
-- [ ] Nested artboard inputs
-- [ ] Trigger inputs (`RiveInput::fire()`)
-- [ ] State machine input changes via inspector
-- [ ] Mouse interactions (joystick.riv)
+### Platforms
+- macOS x86_64 (local build)
+- Linux x86_64 (CI build)
 
-### Planned (Roadmap)
-- **M4: Linux Build** - Cross-platform deployment
-- **M5: GPU Rendering** - RenderingDevice or Rive Renderer integration
-- **M6: ViewModel/Data Binding** - Unity parity for data-driven animations
-- **M7: Luau Scripting** - Script execution inside Rive files
-- **M8: Audio** - Rive audio → Godot AudioStreamPlayer bridge
+### Dependencies
+- Godot 4.6.2
+- rive-runtime @ `b11b579c` (April 2026)
+- Skia (rive-optimized fork)
 
 ---
 
