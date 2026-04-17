@@ -49,6 +49,24 @@ jobs:
 
       # Note: build_rive.sh builds premake5 from source automatically (v5.0.0-beta7)
       # It also sets --with_rive_text --with_rive_layout by default
+      # The symlinks below are needed for premake5 to find the build config files
+
+      - name: Create required symlinks for rive-runtime
+        if: steps.cache-rive.outputs.cache-hit != 'true'
+        working-directory: thirdparty/rive-runtime
+        run: |
+          # Create symlinks in rive-runtime root (required for premake5 to find config)
+          ln -sf build/rive_build_config.lua rive_build_config.lua
+          ln -sf build/setup_compiler.lua setup_compiler.lua
+          ln -sf build/dependency.lua dependency.lua
+          ln -sf premake5_v2.lua premake5.lua
+
+          # Create symlinks in skia/renderer directory
+          cd skia/renderer
+          ln -sf ../../build/rive_build_config.lua rive_build_config.lua
+          ln -sf ../../build/setup_compiler.lua setup_compiler.lua
+          ln -sf ../../build/dependency.lua dependency.lua
+          ln -sf premake5_v2.lua premake5.lua
 
       - name: Build rive-runtime core libraries
         if: steps.cache-rive.outputs.cache-hit != 'true'
@@ -172,8 +190,8 @@ jobs:
             skia_enable_tools=false
           '
 
-          # Build
-          ninja -C out/linux/x64
+          # Build only libskia.a (skip examples and tools)
+          ninja -C out/linux/x64 libskia.a
 
       - name: Verify Skia build
         run: |
