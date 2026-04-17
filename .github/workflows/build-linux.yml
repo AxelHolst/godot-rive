@@ -103,9 +103,10 @@ jobs:
           path: |
             thirdparty/rive-runtime/skia/dependencies/skia/out
             thirdparty/rive-runtime/skia/dependencies/skia/include
-          key: skia-linux-x64-${{ hashFiles('thirdparty/rive-runtime/skia/dependencies/get_skia*.sh', 'thirdparty/rive-runtime/skia/dependencies/make_skia*.sh') }}
+          # v2: Removed -flto=full from build flags for linker compatibility
+          key: skia-linux-x64-v2-${{ hashFiles('thirdparty/rive-runtime/skia/dependencies/get_skia*.sh', 'thirdparty/rive-runtime/skia/dependencies/make_skia*.sh') }}
           restore-keys: |
-            skia-linux-x64-
+            skia-linux-x64-v2-
 
       - name: Install Skia build dependencies
         if: steps.cache-skia.outputs.cache-hit != 'true'
@@ -139,7 +140,7 @@ jobs:
             is_official_build=true
             cc="clang"
             cxx="clang++"
-            extra_cflags=["-fno-rtti", "-flto=full"]
+            extra_cflags=["-fno-rtti"]
 
             skia_use_freetype=true
             skia_use_system_freetype2=false
