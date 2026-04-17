@@ -78,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rive-runtime-linux-x64
-          path: thirdparty/rive-runtime/out/debug/*.a
+          path: thirdparty/rive-runtime/out/
           retention-days: 7
 
   # =============================================================================
@@ -186,12 +186,14 @@ jobs:
           echo "=== Checking Skia headers ==="
           ls thirdparty/rive-runtime/skia/dependencies/skia/include/core/ | head -5 || echo "No headers"
 
+      # Upload Skia - we need to preserve directory structure for both out/ and include/
+      # Upload from skia root to maintain paths relative to skia/
       - name: Upload Skia library and headers
         uses: actions/upload-artifact@v4
         with:
           name: skia-linux-x64
           path: |
-            thirdparty/rive-runtime/skia/dependencies/skia/out/linux/x64/libskia.a
+            thirdparty/rive-runtime/skia/dependencies/skia/out/
             thirdparty/rive-runtime/skia/dependencies/skia/include/
           retention-days: 7
 
@@ -214,7 +216,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: rive-runtime-linux-x64
-          path: thirdparty/rive-runtime/
+          path: thirdparty/rive-runtime/out/
 
       - name: Download Skia library and headers
         uses: actions/download-artifact@v4
