@@ -95,12 +95,14 @@ jobs:
         with:
           submodules: recursive
 
-      # Cache Skia - key based on skia source hash
+      # Cache Skia - includes both out/ (build) and include/ (headers)
       - name: Cache Skia
         id: cache-skia
         uses: actions/cache@v4
         with:
-          path: thirdparty/rive-runtime/skia/dependencies/skia/out
+          path: |
+            thirdparty/rive-runtime/skia/dependencies/skia/out
+            thirdparty/rive-runtime/skia/dependencies/skia/include
           key: skia-linux-x64-${{ hashFiles('thirdparty/rive-runtime/skia/dependencies/get_skia*.sh', 'thirdparty/rive-runtime/skia/dependencies/make_skia*.sh') }}
           restore-keys: |
             skia-linux-x64-
@@ -181,6 +183,8 @@ jobs:
         run: |
           echo "=== Checking Skia libraries ==="
           ls -la thirdparty/rive-runtime/skia/dependencies/skia/out/linux/x64/ || echo "No Skia output"
+          echo "=== Checking Skia headers ==="
+          ls thirdparty/rive-runtime/skia/dependencies/skia/include/core/ | head -5 || echo "No headers"
 
       - name: Upload Skia library and headers
         uses: actions/upload-artifact@v4
@@ -188,7 +192,7 @@ jobs:
           name: skia-linux-x64
           path: |
             thirdparty/rive-runtime/skia/dependencies/skia/out/linux/x64/libskia.a
-            thirdparty/rive-runtime/skia/dependencies/skia/include/**
+            thirdparty/rive-runtime/skia/dependencies/skia/include/
           retention-days: 7
 
   # =============================================================================
