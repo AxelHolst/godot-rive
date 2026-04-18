@@ -41,6 +41,9 @@
 
 // GPU Rendering (Milestone 5)
 #include "gpu/rive_gpu_bridge.hpp"
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+#include "gpu/rive_gpu_renderer.hpp"
+#endif
 
 using namespace godot;
 
@@ -63,9 +66,13 @@ class RiveViewerBase {
     Ref<ImageTexture> texture;
 
     // GPU Rendering (Milestone 5) - Vulkan-first approach
-    // Static flag: Only probe GPU once per process, not per viewer instance
+    // Static members: Shared across all viewer instances
     static bool gpu_probed;
     static std::unique_ptr<rive_godot::RiveGPUBridge> gpu_bridge;
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+    static std::unique_ptr<rive_godot::RiveGPURenderer> gpu_renderer;
+    static bool gpu_renderer_failed;  // Prevent repeated init attempts
+#endif
 
    protected:
     void _on_path_changed(String path);

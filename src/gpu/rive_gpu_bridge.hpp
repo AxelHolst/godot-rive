@@ -7,18 +7,15 @@
  * the Rive GPU Renderer (rive::gpu::RenderContext).
  *
  * Platform Support:
- * - macOS: MTLDevice extraction (Metal)
- * - Linux: VkDevice extraction (Vulkan via MoltenVK or native)
+ * - macOS: Vulkan via MoltenVK (Godot's default)
+ * - Linux: Native Vulkan
+ * - Windows: Vulkan or D3D12
  *
  * Usage:
  *   auto bridge = RiveGPUBridge::create();
  *   if (bridge && bridge->is_valid()) {
- *       // Use bridge->get_metal_device() or bridge->get_vulkan_device()
+ *       auto renderer = RiveGPURenderer::create(*bridge, config);
  *   }
- *
- * @note This is infrastructure for Milestone 5. The actual GPU renderer
- *       integration will be implemented once Metal shader compilation
- *       is available (requires full Xcode installation).
  */
 
 #ifndef _RIVEEXTENSION_GPU_BRIDGE_HPP_
@@ -27,11 +24,15 @@
 // Godot headers
 #include <godot_cpp/classes/rendering_device.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
+#include <godot_cpp/classes/rd_texture_format.hpp>
+#include <godot_cpp/classes/rd_texture_view.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/variant/rid.hpp>
 
 // Standard library
 #include <memory>
 #include <cstdint>
+#include <functional>
 
 namespace rive_godot {
 
@@ -47,11 +48,16 @@ enum class GPUBackend {
 };
 
 /**
+ * @brief Vulkan function loader signature (PFN_vkGetInstanceProcAddr)
+ */
+using VkGetInstanceProcAddrFn = void* (*)(void* instance, const char* name);
+
+/**
  * @brief Bridge class for extracting native GPU handles from Godot
  *
  * This class uses Godot's RenderingDevice::get_driver_resource() to
- * extract the underlying VkDevice (Vulkan) or MTLDevice (Metal) handles
- * that are required by the Rive GPU Renderer.
+ * extract the underlying VkDevice, VkPhysicalDevice, and VkInstance
+ * handles that are required by the Rive GPU Renderer.
  */
 class RiveGPUBridge {
 public:
@@ -91,8 +97,19 @@ public:
      * @brief Check if GPU device handles were successfully extracted
      */
     bool is_valid() const {
-        return backend != GPUBackend::UNKNOWN &&
-               (vk_device != 0 || mtl_device != nullptr);
+        if (backend == GPUBackend::VULKAN) {
+            // For Vulkan, we need at minimum VkDevice and VkPhysicalDevice
+            // VkInstance is also required for Rive's RenderContextVulkanImpl
+            return vk_device != 0 && vk_physical_device != 0 && vk_instance != 0;
+        }
+        return false;
+    }
+
+    /**
+     * @brief Check if we have partial Vulkan handles (missing VkInstance)
+     */
+    bool has_partial_vulkan() const {
+        return backend == GPUBackend::VULKAN && vk_device != 0 && vk_physical_device != 0;
     }
 
     /**
@@ -113,11 +130,9 @@ public:
         }
     }
 
-    /**
-     * @brief Get Vulkan device handle (VkDevice)
-     * @return VkDevice cast to uint64_t, or 0 if not available
-     */
-    uint64_t get_vulkan_device() const { return vk_device; }
+    // =========================================================================
+    // VULKAN HANDLES
+    // =========================================================================
 
     /**
      * @brief Get Vulkan instance handle (VkInstance)
@@ -132,11 +147,88 @@ public:
     uint64_t get_vulkan_physical_device() const { return vk_physical_device; }
 
     /**
+     * @brief Get Vulkan device handle (VkDevice)
+     * @return VkDevice cast to uint64_t, or 0 if not available
+     */
+    uint64_t get_vulkan_device() const { return vk_device; }
+
+    /**
+     * @brief Get Vulkan graphics queue (VkQueue)
+     * @return VkQueue cast to uint64_t, or 0 if not available
+     */
+    uint64_t get_vulkan_queue() const { return vk_queue; }
+
+    /**
+     * @brief Get Vulkan queue family index
+     * @return Queue family index, or UINT32_MAX if not available
+     */
+    uint32_t get_vulkan_queue_family_index() const { return vk_queue_family_index; }
+
+    /**
      * @brief Get Metal device handle (MTLDevice*)
      * @return Pointer to MTLDevice, or nullptr if not available
-     * @note On macOS, this is an Objective-C object pointer
+     * @note On macOS with MoltenVK, this would require MVK extension
      */
     void* get_metal_device() const { return mtl_device; }
+
+    /**
+     * @brief Get the Godot RenderingDevice for texture operations
+     */
+    godot::RenderingDevice* get_rendering_device() const { return rendering_device; }
+
+    // =========================================================================
+    // TEXTURE OPERATIONS
+    // =========================================================================
+
+    /**
+     * @brief Create a Godot texture that can be shared with Rive
+     * @param width Texture width in pixels
+     * @param height Texture height in pixels
+     * @return RID of created texture, or invalid RID on failure
+     */
+    godot::RID create_shared_texture(uint32_t width, uint32_t height) const {
+        if (!rendering_device) return godot::RID();
+
+        // Create texture format - RGBA8 UNORM for compatibility
+        godot::Ref<godot::RDTextureFormat> format;
+        format.instantiate();
+        format->set_format(godot::RenderingDevice::DATA_FORMAT_R8G8B8A8_UNORM);
+        format->set_width(width);
+        format->set_height(height);
+        format->set_depth(1);
+        format->set_array_layers(1);
+        format->set_mipmaps(1);
+        format->set_texture_type(godot::RenderingDevice::TEXTURE_TYPE_2D);
+        format->set_samples(godot::RenderingDevice::TEXTURE_SAMPLES_1);
+        format->set_usage_bits(
+            godot::RenderingDevice::TEXTURE_USAGE_SAMPLING_BIT |
+            godot::RenderingDevice::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT |
+            godot::RenderingDevice::TEXTURE_USAGE_CAN_UPDATE_BIT |
+            godot::RenderingDevice::TEXTURE_USAGE_CAN_COPY_FROM_BIT
+        );
+
+        // Create texture view
+        godot::Ref<godot::RDTextureView> view;
+        view.instantiate();
+
+        // Create the texture
+        return rendering_device->texture_create(format, view);
+    }
+
+    /**
+     * @brief Get the underlying VkImage from a Godot texture RID
+     * @param texture_rid RID of the Godot texture
+     * @return VkImage cast to uint64_t, or 0 if not available
+     */
+    uint64_t get_texture_vulkan_image(godot::RID texture_rid) const {
+        if (!rendering_device || !texture_rid.is_valid()) return 0;
+
+        return rendering_device->get_driver_resource(
+            godot::RenderingDevice::DRIVER_RESOURCE_VULKAN_IMAGE,
+            texture_rid,
+            0
+        );
+    }
 
     /**
      * @brief Print diagnostic information about the GPU bridge
@@ -147,18 +239,32 @@ public:
 
         if (backend == GPUBackend::VULKAN) {
             godot::UtilityFunctions::print(
-                "[RiveGPUBridge] VkInstance: ", vk_instance);
+                "[RiveGPUBridge] VkInstance: 0x",
+                godot::String::num_int64(vk_instance, 16));
             godot::UtilityFunctions::print(
-                "[RiveGPUBridge] VkPhysicalDevice: ", vk_physical_device);
+                "[RiveGPUBridge] VkPhysicalDevice: 0x",
+                godot::String::num_int64(vk_physical_device, 16));
             godot::UtilityFunctions::print(
-                "[RiveGPUBridge] VkDevice: ", vk_device);
+                "[RiveGPUBridge] VkDevice: 0x",
+                godot::String::num_int64(vk_device, 16));
+            godot::UtilityFunctions::print(
+                "[RiveGPUBridge] VkQueue: 0x",
+                godot::String::num_int64(vk_queue, 16));
+            godot::UtilityFunctions::print(
+                "[RiveGPUBridge] Queue Family Index: ", vk_queue_family_index);
         } else if (backend == GPUBackend::METAL) {
             godot::UtilityFunctions::print(
-                "[RiveGPUBridge] MTLDevice: ", (uint64_t)mtl_device);
+                "[RiveGPUBridge] MTLDevice: 0x",
+                godot::String::num_int64((uint64_t)mtl_device, 16));
         }
 
         godot::UtilityFunctions::print(
             "[RiveGPUBridge] Valid: ", is_valid() ? "yes" : "no");
+
+        if (has_partial_vulkan() && !is_valid()) {
+            godot::UtilityFunctions::push_warning(
+                "[RiveGPUBridge] Partial Vulkan handles - missing VkInstance");
+        }
     }
 
 private:
@@ -169,8 +275,10 @@ private:
     uint64_t vk_instance = 0;
     uint64_t vk_physical_device = 0;
     uint64_t vk_device = 0;
+    uint64_t vk_queue = 0;
+    uint32_t vk_queue_family_index = UINT32_MAX;
 
-    // Metal handles
+    // Metal handles (for future use)
     void* mtl_device = nullptr;
 
     /**
@@ -179,30 +287,31 @@ private:
     void detect_backend() {
         if (!rendering_device) return;
 
-        // Try to get device name to detect backend
-        // Godot 4.x uses Vulkan by default on all platforms except web
-        // macOS uses MoltenVK (Vulkan over Metal) or native Metal
-
-        // Try Vulkan first (most common)
+        // Try to get VkDevice to detect Vulkan backend
         uint64_t device = rendering_device->get_driver_resource(
+            godot::RenderingDevice::DRIVER_RESOURCE_VULKAN_DEVICE,
+            godot::RID(),
+            0
+        );
+
+        if (device != 0) {
+            backend = GPUBackend::VULKAN;
+            return;
+        }
+
+        // Fallback: try generic LOGICAL_DEVICE
+        device = rendering_device->get_driver_resource(
             godot::RenderingDevice::DRIVER_RESOURCE_LOGICAL_DEVICE,
             godot::RID(),
             0
         );
 
         if (device != 0) {
-            // Check if this is MoltenVK on macOS or native Vulkan
-#ifdef __APPLE__
-            // On macOS, Godot uses Vulkan via MoltenVK
-            // We could also use Metal directly for better performance
+            // Assume Vulkan on desktop platforms
             backend = GPUBackend::VULKAN;
-#else
-            backend = GPUBackend::VULKAN;
-#endif
             return;
         }
 
-        // Fallback: assume unknown
         backend = GPUBackend::UNKNOWN;
     }
 
@@ -210,39 +319,71 @@ private:
      * @brief Extract native device handles using RenderingDevice API
      */
     void extract_device_handles() {
-        if (!rendering_device) return;
+        if (!rendering_device || backend != GPUBackend::VULKAN) return;
 
-        // Extract based on detected backend
-        if (backend == GPUBackend::VULKAN) {
-            // DRIVER_RESOURCE_VULKAN_DEVICE = VkDevice
-            // DRIVER_RESOURCE_VULKAN_PHYSICAL_DEVICE = VkPhysicalDevice
-            // DRIVER_RESOURCE_VULKAN_INSTANCE = VkInstance
+        // Extract VkInstance (DRIVER_RESOURCE_VULKAN_INSTANCE = 2)
+        // This maps to DRIVER_RESOURCE_TOPMOST_OBJECT in the generic enum
+        vk_instance = rendering_device->get_driver_resource(
+            godot::RenderingDevice::DRIVER_RESOURCE_VULKAN_INSTANCE,
+            godot::RID(),
+            0
+        );
 
-            // Note: These enum values map to Godot's DriverResource enum
-            // DRIVER_RESOURCE_LOGICAL_DEVICE is the VkDevice
+        // Extract VkPhysicalDevice
+        vk_physical_device = rendering_device->get_driver_resource(
+            godot::RenderingDevice::DRIVER_RESOURCE_VULKAN_PHYSICAL_DEVICE,
+            godot::RID(),
+            0
+        );
+
+        // Extract VkDevice
+        vk_device = rendering_device->get_driver_resource(
+            godot::RenderingDevice::DRIVER_RESOURCE_VULKAN_DEVICE,
+            godot::RID(),
+            0
+        );
+
+        // Extract VkQueue
+        vk_queue = rendering_device->get_driver_resource(
+            godot::RenderingDevice::DRIVER_RESOURCE_VULKAN_QUEUE,
+            godot::RID(),
+            0
+        );
+
+        // Extract queue family index
+        vk_queue_family_index = static_cast<uint32_t>(
+            rendering_device->get_driver_resource(
+                godot::RenderingDevice::DRIVER_RESOURCE_VULKAN_QUEUE_FAMILY_INDEX,
+                godot::RID(),
+                0
+            )
+        );
+
+        // Fallback: if VULKAN-specific enums don't work, try generic ones
+        if (vk_device == 0) {
             vk_device = rendering_device->get_driver_resource(
                 godot::RenderingDevice::DRIVER_RESOURCE_LOGICAL_DEVICE,
                 godot::RID(),
                 0
             );
+        }
 
-            // Physical device
+        if (vk_physical_device == 0) {
             vk_physical_device = rendering_device->get_driver_resource(
                 godot::RenderingDevice::DRIVER_RESOURCE_PHYSICAL_DEVICE,
                 godot::RID(),
                 0
             );
-
-            // Instance
-            // Note: DRIVER_RESOURCE_VULKAN_INSTANCE might not be directly exposed
-            // May need to use different approach for VkInstance
         }
 
-#ifdef __APPLE__
-        // On macOS, we might also want to extract the underlying MTLDevice
-        // from MoltenVK for potential future Metal-native rendering
-        // This would require MoltenVK's vkGetMTLDeviceMVK() extension
-#endif
+        if (vk_instance == 0) {
+            // Try TOPMOST_OBJECT which maps to VkInstance in Vulkan
+            vk_instance = rendering_device->get_driver_resource(
+                godot::RenderingDevice::DRIVER_RESOURCE_TOPMOST_OBJECT,
+                godot::RID(),
+                0
+            );
+        }
     }
 };
 

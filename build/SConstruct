@@ -4,9 +4,9 @@ from os.path import join
 # =============================================================================
 # BUILD CONFIGURATION FLAGS
 # =============================================================================
-# GPU rendering support (Milestone 5) - currently disabled until Metal shaders
-# can be compiled (requires full Xcode, not just Command Line Tools)
-ENABLE_GPU_RENDERER = False  # Set to True when Metal/.metallib is available
+# GPU rendering support (Milestone 5) - Vulkan-first approach via MoltenVK
+# Set to True to enable the Rive PLS (Pixel Local Storage) GPU Renderer
+ENABLE_GPU_RENDERER = True  # Vulkan backend via MoltenVK on macOS
 
 def GetRiveBin(path: str) -> str:
     """Get path to rive-runtime binary library."""
@@ -196,18 +196,20 @@ env.Prepend(
 )
 
 # =============================================================================
-# MILESTONE 5: GPU RENDERER INFRASTRUCTURE (Rive PLS Renderer)
+# MILESTONE 5: GPU RENDERER (Rive PLS Renderer with Vulkan)
 # =============================================================================
-# The Rive Renderer is a native GPU renderer that uses Metal/Vulkan directly.
-# This is preparation for GPU rendering - currently disabled until Metal shaders
-# can be compiled (requires full Xcode installation with Metal compiler).
+# The Rive PLS (Pixel Local Storage) Renderer is a native GPU renderer.
+# We use the Vulkan backend which works on macOS via MoltenVK (Godot's default).
 #
-# Include paths are added regardless of ENABLE_GPU_RENDERER so that the
-# RiveGPUBridge prototype can be developed and tested.
+# Architecture:
+#   RiveGPURenderer -> RenderContextVulkanImpl -> VkDevice (from Godot)
+#                                              -> VkImage (shared texture)
 # =============================================================================
 RIVE_RENDERER_DIR = join(RIVE_RUNTIME_DIR, "renderer")
+RIVE_RENDERER_DEPS_DIR = join(RIVE_RENDERER_DIR, "dependencies")
 RIVE_RENDERER_GENERATED = join(RIVE_RENDERER_DIR, "out/debug/include")
 
+# Renderer include paths (always added for RiveGPUBridge development)
 env.Append(
     CPPPATH=[
         join(RIVE_RENDERER_DIR, "include"),
@@ -216,13 +218,59 @@ env.Append(
     ],
 )
 
-# GPU Renderer define for conditional compilation in source code
+# GPU Renderer: Vulkan backend compilation
 if ENABLE_GPU_RENDERER:
-    env.Append(CPPDEFINES=["RIVE_GPU_RENDERER"])
-    # When GPU renderer is enabled, we would add librive_pls_renderer.a here
-    # gpu_renderer_lib = GetRiveBin("renderer/out/{target}/librive_pls_renderer{suffix}")
-    # env.RequireFile(gpu_renderer_lib)
-    # env.Prepend(LIBS=[gpu_renderer_lib])
+    # ==========================================================================
+    # VULKAN DEPENDENCIES
+    # ==========================================================================
+    # These are fetched from GitHub by the build process:
+    #   - KhronosGroup/Vulkan-Headers (vulkan-sdk-1.4.321)
+    #   - GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator (v3.3.0)
+    VULKAN_HEADERS_DIR = join(
+        RIVE_RENDERER_DEPS_DIR,
+        "KhronosGroup_Vulkan-Headers_vulkan-sdk-1.4.321/include"
+    )
+    VMA_DIR = join(
+        RIVE_RENDERER_DEPS_DIR,
+        "GPUOpen-LibrariesAndSDKs_VulkanMemoryAllocator_v3.3.0/include"
+    )
+
+    # Verify dependencies exist
+    env.RequireFile(Dir(VULKAN_HEADERS_DIR))
+    env.RequireFile(Dir(VMA_DIR))
+
+    # Add Vulkan include paths
+    env.Append(CPPPATH=[VULKAN_HEADERS_DIR, VMA_DIR])
+
+    # ==========================================================================
+    # VULKAN PREPROCESSOR DEFINES
+    # ==========================================================================
+    # These MUST match the Rive renderer build exactly:
+    #   - RIVE_VULKAN: Enable Vulkan backend
+    #   - VK_NO_PROTOTYPES: Don't declare vkXxx function prototypes (dynamic loading)
+    #   - VMA_*: VulkanMemoryAllocator loads functions at runtime
+    env.Append(CPPDEFINES=[
+        "RIVE_GPU_RENDERER",      # Enable GPU renderer in our code
+        "RIVE_VULKAN",            # Enable Vulkan backend in Rive
+        "VK_NO_PROTOTYPES",       # Dynamic Vulkan function loading
+        ("VMA_STATIC_VULKAN_FUNCTIONS", "0"),
+        ("VMA_DYNAMIC_VULKAN_FUNCTIONS", "1"),
+    ])
+
+    # ==========================================================================
+    # PLS RENDERER SOURCE FILES
+    # ==========================================================================
+    # Core renderer sources (platform-agnostic)
+    pls_renderer_sources = env.Glob(join(RIVE_RENDERER_DIR, "src/*.cpp"))
+
+    # Vulkan backend sources
+    pls_renderer_sources += env.Glob(join(RIVE_RENDERER_DIR, "src/vulkan/*.cpp"))
+
+    # Add to main source list (compiled into the extension)
+    sources += pls_renderer_sources
+
+    # Log what we're compiling
+    print(f"[M5] GPU Renderer: Compiling {len(pls_renderer_sources)} PLS renderer sources")
 
 # Add source files
 env.Append(CPPPATH=["../src/"])

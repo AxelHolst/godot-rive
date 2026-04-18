@@ -1210,6 +1210,246 @@ renderContext->flush({.renderTarget = target, .frameNumber = n});
 | Milestone | Status | Description |
 |-----------|--------|-------------|
 | M1-M4 | ✅ Complete | Core runtime, events, Linux CI |
-| **M5: GPU Rendering** | 🔄 Phase 1 Done | Infrastructure ready, needs Xcode |
+| **M5: GPU Rendering** | 🔄 Phase 2 Done | Vulkan PLS renderer compiled |
 | M6-M8 | ⏳ Pending | ViewModel, Scripting, Audio |
+
+---
+
+## 2026-04-18: Milestone 5 Phase 2 - Vulkan PLS Renderer Compilation
+
+### Strategic Pivot: Vulkan-First Approach
+
+Since Metal shader compilation requires full Xcode (not available), we pivoted to a **Vulkan-first strategy**. This works on macOS via MoltenVK (Godot's default Vulkan backend).
+
+### Dependencies Installed
+
+| Dependency | Version | Purpose |
+|-----------|---------|---------|
+| `KhronosGroup/Vulkan-Headers` | `vulkan-sdk-1.4.321` | Vulkan API headers |
+| `GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator` | `v3.3.0` | GPU memory management |
+| `glslang` (Homebrew) | `16.2.0` | GLSL → SPIR-V compiler |
+
+### SPIR-V Shader Compilation
+
+Generated 100 SPIR-V shader headers from GLSL sources:
+```bash
+cd thirdparty/rive-runtime/renderer/src/shaders
+make spirv  # Uses glslangValidator + spirv-opt
+```
+
+Output: `renderer/out/debug/include/generated/shaders/spirv/*.h`
+
+### SConstruct Updates
+
+**Key Changes:**
+```python
+# Enable GPU renderer flag
+ENABLE_GPU_RENDERER = True
+
+# Vulkan preprocessor defines
+env.Append(CPPDEFINES=[
+    "RIVE_GPU_RENDERER",
+    "RIVE_VULKAN",
+    "VK_NO_PROTOTYPES",
+    ("VMA_STATIC_VULKAN_FUNCTIONS", "0"),
+    ("VMA_DYNAMIC_VULKAN_FUNCTIONS", "1"),
+])
+
+# Compile PLS renderer sources (25 files)
+pls_renderer_sources = env.Glob(join(RIVE_RENDERER_DIR, "src/*.cpp"))
+pls_renderer_sources += env.Glob(join(RIVE_RENDERER_DIR, "src/vulkan/*.cpp"))
+```
+
+### Build Verification
+
+```bash
+scons platform=macos target=template_debug arch=x86_64
+# [M5] GPU Renderer: Compiling 25 PLS renderer sources
+# Linking Shared Library ... librive.macos.template_debug
+# Library size: 33.7 MB (was 31.7 MB)
+```
+
+**Symbol Verification:**
+```bash
+nm librive.macos.template_debug | grep "RenderContextVulkanImpl"
+# 0x60cbe0 RenderContextVulkanImpl::MakeContext(VkInstance, VkPhysicalDevice, VkDevice, ...)
+```
+
+### RiveGPURenderer Class Design
+
+Created `src/gpu/rive_gpu_renderer.hpp` with the following architecture:
+
+```
+RiveGPURenderer
+    |
+    +-> RenderContextVulkanImpl (Rive's Vulkan backend)
+    |       |
+    |       +-> VkDevice (from Godot via RiveGPUBridge)
+    |       +-> VkPhysicalDevice
+    |       +-> VkInstance
+    |
+    +-> RenderTarget (Vulkan image → Godot texture)
+    |
+    +-> RiveRenderer (draws artboard to render target)
+```
+
+**Key Methods:**
+- `create(RiveGPUBridge&, GPURendererConfig&)` - Factory method
+- `beginFrame()` / `endFrame()` - Frame lifecycle
+- `draw(Artboard*, Mat2D*)` - Render artboard
+- `getGodotTextureRID()` - Get Godot texture handle
+
+### Files Modified/Created
+
+| Category | Files |
+|----------|-------|
+| Build | `build/SConstruct` (Vulkan compilation) |
+| Source | `src/gpu/rive_gpu_renderer.hpp` (NEW - GPU renderer class) |
+| Dependencies | `renderer/dependencies/` (Vulkan-Headers, VMA) |
+| Shaders | `renderer/out/debug/include/generated/shaders/spirv/*.h` (100 files) |
+
+### Next Steps (Phase 3)
+
+1. **Implement `RiveGPURenderer::initVulkan()`** - Wire up `RenderContextVulkanImpl::MakeContext()`
+2. **Extract VkInstance from Godot** - Currently only have VkDevice/VkPhysicalDevice
+3. **Create shared Vulkan texture** - Use `texture_create_from_extension()`
+4. **Wire up frame rendering** - `beginFrame()` → `draw()` → `endFrame()`
+5. **Test in Godot** - Verify GPU rendering produces correct output
+
+### Hardware Handshake Status (from Phase 1)
+
+Successfully extracting from Godot's RenderingDevice:
+- ✅ VkDevice: `0x7f793f076a18`
+- ✅ VkPhysicalDevice: `0x7f793f04e418`
+- ⏳ VkInstance: Need to add extraction
+
+### Technical Notes
+
+**VulkanMemoryAllocator Warnings:**
+838 nullability warnings from VMA header (benign, from Apple's clang strictness).
+Could silence with `-Wno-nullability-completeness` if needed.
+
+**Dynamic Vulkan Loading:**
+VMA and Rive use `vkGetInstanceProcAddr` to load Vulkan functions at runtime.
+This is required since `VK_NO_PROTOTYPES` is defined (no static linking to Vulkan loader).
+
+---
+
+## 2026-04-18: Milestone 5 Phase 3 - GPU Renderer Initialization SUCCESS
+
+### Summary
+
+**Phase 3 Complete!** The Rive GPU Renderer with Vulkan backend is now fully initialized and integrated with Godot.
+
+### Achievements
+
+1. **VkInstance Extraction** - Added `DRIVER_RESOURCE_VULKAN_INSTANCE` extraction from Godot's RenderingDevice
+2. **RiveGPURenderer Implementation** - Full `rive_gpu_renderer.cpp` with Vulkan context creation
+3. **Godot Texture Integration** - Created shared texture using RenderingDevice API
+4. **Fallback Logic** - Graceful fallback to Skia CPU rendering if GPU initialization fails
+
+### Successful Initialization Output
+
+```
+[RiveGPU] === Hardware Handshake ===
+[RiveGPU] Attempting to extract GPU device handles from Godot...
+[RiveGPUBridge] Backend: Vulkan
+[RiveGPUBridge] VkInstance: 0x7f978985e618
+[RiveGPUBridge] VkPhysicalDevice: 0x7f9788851018
+[RiveGPUBridge] VkDevice: 0x7f9789015418
+[RiveGPUBridge] VkQueue: 0x7f978812f3e8
+[RiveGPUBridge] Queue Family Index: 0
+[RiveGPUBridge] Valid: yes
+[RiveGPU] SUCCESS: GPU device handles extracted!
+[RiveGPU] *** HARDWARE HANDSHAKE SUCCESSFUL ***
+[RiveGPU] Attempting to initialize GPU renderer...
+[RiveGPURenderer] Creating GPU renderer...
+[RiveGPURenderer] Initializing Vulkan context...
+[RiveGPURenderer] Found vkGetInstanceProcAddr in process
+[RiveGPURenderer] VkInstance: 0x7f978985e618
+[RiveGPURenderer] VkPhysicalDevice: 0x7f9788851018
+[RiveGPURenderer] VkDevice: 0x7f9789015418
+[RiveGPURenderer] Vulkan context initialized
+[RiveGPURenderer] Creating render target (512x512)...
+[RiveGPURenderer] Render target created
+[RiveGPURenderer] Creating Godot texture...
+[RiveGPURenderer] Godot texture created (RID: 2190433320994)
+[RiveGPURenderer] Created successfully (512x512)
+[RiveGPU] *** GPU RENDERER INITIALIZED ***
+=== RiveGPURenderer Diagnostics ===
+  Valid: yes
+  Dimensions: 512x512
+  Frame Number: 0
+  Frame In Progress: no
+  VkInstance: 0x7f978985e618
+  VkPhysicalDevice: 0x7f9788851018
+  VkDevice: 0x7f9789015418
+  RenderContext: created
+  RenderTarget: created
+  RiveRenderer: created
+  Godot Texture RID: valid
+=== End Diagnostics ===
+```
+
+### Technical Implementation Details
+
+**VkInstance Extraction** - Updated `RiveGPUBridge` to use `DRIVER_RESOURCE_VULKAN_INSTANCE`:
+```cpp
+vk_instance = rendering_device->get_driver_resource(
+    godot::RenderingDevice::DRIVER_RESOURCE_VULKAN_INSTANCE,
+    godot::RID(), 0);
+```
+
+**vkGetInstanceProcAddr on macOS** - Godot has MoltenVK statically linked, so we use `RTLD_DEFAULT`:
+```cpp
+auto procAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+    dlsym(RTLD_DEFAULT, "vkGetInstanceProcAddr"));
+```
+
+**Vulkan Context Creation** - Using Rive's factory:
+```cpp
+m_renderContext = rive::gpu::RenderContextVulkanImpl::MakeContext(
+    m_vkInstance, m_vkPhysicalDevice, m_vkDevice,
+    features, procAddr, contextOptions);
+```
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/gpu/rive_gpu_bridge.hpp` | Added VkInstance, VkQueue extraction; texture creation |
+| `src/gpu/rive_gpu_renderer.cpp` | NEW - Full implementation |
+| `src/rive_viewer_base.h` | Added GPU renderer static members |
+| `src/rive_viewer_base.cpp` | Added GPU initialization in `probe_gpu_device()` |
+
+### Bug Fixes During Implementation
+
+1. **vkGetInstanceProcAddr not found** - Godot has MoltenVK statically linked, needed `dlsym(RTLD_DEFAULT, ...)` instead of dynamic library loading
+2. **Bridge pointer not set** - `m_bridge` was set after `createGodotTexture()` was called, causing null pointer access
+3. **Wrong namespace** - `RiveRenderer` is in `rive::` namespace, not `rive::gpu::`
+4. **FlushResources struct** - Uses `currentFrameNumber`/`safeFrameNumber`, not `frameNumber`
+
+### Current Status
+
+| Component | Status |
+|-----------|--------|
+| Vulkan context | ✅ Created |
+| Render target | ✅ Created (512x512) |
+| RiveRenderer | ✅ Created |
+| Godot texture | ✅ Created (RID valid) |
+| Frame rendering | ⏳ Not yet wired to viewer |
+| Texture sync | ⏳ Not yet implemented |
+
+### Next Steps (Phase 4)
+
+1. **Wire GPU rendering to viewer** - Replace CPU Skia path with GPU path when available
+2. **Implement texture sync** - Copy from Rive render target to Godot texture (or zero-copy)
+3. **Handle resize** - Recreate render targets when viewer size changes
+4. **Performance testing** - Compare GPU vs CPU rendering performance
+
+### Updated Milestone Status
+
+| Milestone | Status | Notes |
+|-----------|--------|-------|
+| **M5: GPU Rendering** | 🔄 Phase 3 Done | GPU context initialized, rendering path next |
 

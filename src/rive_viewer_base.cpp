@@ -33,8 +33,13 @@ const Image::Format IMAGE_FORMAT = Image::Format::FORMAT_RGBA8;
 // =============================================================================
 // These are static so we only probe the GPU once per process, not per viewer.
 // The GPU bridge extracts VkDevice/MTLDevice from Godot's RenderingDevice.
+// The GPU renderer (if available) is shared across all viewer instances.
 bool RiveViewerBase::gpu_probed = false;
 std::unique_ptr<rive_godot::RiveGPUBridge> RiveViewerBase::gpu_bridge = nullptr;
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+std::unique_ptr<rive_godot::RiveGPURenderer> RiveViewerBase::gpu_renderer = nullptr;
+bool RiveViewerBase::gpu_renderer_failed = false;
+#endif
 
 RiveViewerBase::RiveViewerBase(CanvasItem *owner) {
     this->owner = owner;
@@ -185,7 +190,7 @@ void RiveViewerBase::deferred_init() {
 }
 
 // =============================================================================
-// MILESTONE 5: GPU DEVICE EXTRACTION
+// MILESTONE 5: GPU DEVICE EXTRACTION AND RENDERER INITIALIZATION
 // =============================================================================
 void RiveViewerBase::probe_gpu_device() {
     // Only probe once per process lifetime
@@ -219,22 +224,51 @@ void RiveViewerBase::probe_gpu_device() {
 
         // Log the actual memory addresses
         if (gpu_bridge->get_backend() == rive_godot::GPUBackend::VULKAN) {
-            UtilityFunctions::print("[RiveGPU] VkDevice handle: 0x",
-                String::num_int64(gpu_bridge->get_vulkan_device(), 16));
+            UtilityFunctions::print("[RiveGPU] VkInstance handle: 0x",
+                String::num_int64(gpu_bridge->get_vulkan_instance(), 16));
             UtilityFunctions::print("[RiveGPU] VkPhysicalDevice handle: 0x",
                 String::num_int64(gpu_bridge->get_vulkan_physical_device(), 16));
+            UtilityFunctions::print("[RiveGPU] VkDevice handle: 0x",
+                String::num_int64(gpu_bridge->get_vulkan_device(), 16));
 
             // This is the key output - proves we can talk to Godot's GPU
-            if (gpu_bridge->get_vulkan_device() != 0) {
-                UtilityFunctions::print("[RiveGPU] *** HARDWARE HANDSHAKE SUCCESSFUL ***");
-                UtilityFunctions::print("[RiveGPU] Rive GPU Renderer can be initialized with this VkDevice");
+            UtilityFunctions::print("[RiveGPU] *** HARDWARE HANDSHAKE SUCCESSFUL ***");
+
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+            // Attempt to create the GPU renderer
+            UtilityFunctions::print("[RiveGPU] Attempting to initialize GPU renderer...");
+
+            rive_godot::GPURendererConfig config;
+            config.width = 512;   // Default size, will be resized per-viewer
+            config.height = 512;
+            config.forceAtomicMode = false;
+
+            gpu_renderer = rive_godot::RiveGPURenderer::create(*gpu_bridge, config);
+
+            if (gpu_renderer && gpu_renderer->is_valid()) {
+                UtilityFunctions::print("[RiveGPU] *** GPU RENDERER INITIALIZED ***");
+                gpu_renderer->printDiagnostics();
+            } else {
+                UtilityFunctions::push_warning("[RiveGPU] GPU renderer initialization failed");
+                UtilityFunctions::print("[RiveGPU] Falling back to CPU (Skia) rendering");
+                gpu_renderer.reset();
+                gpu_renderer_failed = true;
             }
+#else
+            UtilityFunctions::print("[RiveGPU] GPU renderer not compiled (RIVE_GPU_RENDERER not defined)");
+            UtilityFunctions::print("[RiveGPU] Using CPU (Skia) rendering");
+#endif
         } else if (gpu_bridge->get_backend() == rive_godot::GPUBackend::METAL) {
             UtilityFunctions::print("[RiveGPU] MTLDevice handle: 0x",
                 String::num_int64((uint64_t)gpu_bridge->get_metal_device(), 16));
+            UtilityFunctions::print("[RiveGPU] Metal backend not yet implemented, using CPU (Skia) rendering");
         }
     } else {
-        UtilityFunctions::push_warning("[RiveGPU] GPU bridge created but no valid handles extracted");
+        if (gpu_bridge->has_partial_vulkan()) {
+            UtilityFunctions::push_warning("[RiveGPU] Partial Vulkan handles - missing VkInstance");
+        } else {
+            UtilityFunctions::push_warning("[RiveGPU] GPU bridge created but no valid handles extracted");
+        }
         UtilityFunctions::print("[RiveGPU] Falling back to CPU (Skia) rendering");
     }
 
