@@ -39,6 +39,9 @@
 #include "utils/types.hpp"
 #include "viewer_props.hpp"
 
+// GPU Rendering (Milestone 5)
+#include "gpu/rive_gpu_bridge.hpp"
+
 using namespace godot;
 
 static bool is_editor_hint() {
@@ -59,6 +62,11 @@ class RiveViewerBase {
     Ref<Image> image;
     Ref<ImageTexture> texture;
 
+    // GPU Rendering (Milestone 5) - Vulkan-first approach
+    // Static flag: Only probe GPU once per process, not per viewer instance
+    static bool gpu_probed;
+    static std::unique_ptr<rive_godot::RiveGPUBridge> gpu_bridge;
+
    protected:
     void _on_path_changed(String path);
     void _on_artboard_changed(int index);
@@ -68,6 +76,7 @@ class RiveViewerBase {
     void _on_transform_changed();
     void load_rive_file(String path);
     void deferred_init();  // Called on first process frame, when bindings are definitely ready
+    void probe_gpu_device();  // M5: Attempt to extract GPU device handles
     void check_scene_property_changed();
     bool advance(float delta);
     void poll_events();

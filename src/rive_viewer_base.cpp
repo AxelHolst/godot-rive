@@ -28,6 +28,14 @@
 
 const Image::Format IMAGE_FORMAT = Image::Format::FORMAT_RGBA8;
 
+// =============================================================================
+// GPU RENDERING (Milestone 5) - Static members
+// =============================================================================
+// These are static so we only probe the GPU once per process, not per viewer.
+// The GPU bridge extracts VkDevice/MTLDevice from Godot's RenderingDevice.
+bool RiveViewerBase::gpu_probed = false;
+std::unique_ptr<rive_godot::RiveGPUBridge> RiveViewerBase::gpu_bridge = nullptr;
+
 RiveViewerBase::RiveViewerBase(CanvasItem *owner) {
     this->owner = owner;
     inst.set_props(&props, &initialized);  // Pass initialized flag for callback guards
@@ -98,6 +106,14 @@ void RiveViewerBase::deferred_init() {
 
     RIVE_DEBUG_LOG("[RiveViewer] deferred_init() starting...");
 
+    // ========================================================================
+    // MILESTONE 5: GPU DEVICE PROBE (Vulkan-first approach)
+    // ========================================================================
+    // Attempt to extract GPU device handles from Godot's RenderingDevice.
+    // This runs once per process (static flag) to avoid redundant probing.
+    // The extracted VkDevice will be used for Rive GPU Renderer initialization.
+    probe_gpu_device();
+
     // Deferred file loading - if a file path was set during scene loading,
     // we couldn't load it then because bindings weren't ready. Load it now.
     if (pending_file_load && !props.path().is_empty()) {
@@ -166,6 +182,63 @@ void RiveViewerBase::deferred_init() {
                    ", Scene: ", exists(inst.scene()) ? "OK" : "NULL");
 
     props.size(width(), height());
+}
+
+// =============================================================================
+// MILESTONE 5: GPU DEVICE EXTRACTION
+// =============================================================================
+void RiveViewerBase::probe_gpu_device() {
+    // Only probe once per process lifetime
+    if (gpu_probed) return;
+    gpu_probed = true;
+
+    // Skip GPU probe in editor to avoid potential issues during scene editing
+    if (is_editor_hint()) {
+        UtilityFunctions::print("[RiveGPU] Skipping GPU probe in editor mode");
+        return;
+    }
+
+    UtilityFunctions::print("[RiveGPU] === Hardware Handshake ===");
+    UtilityFunctions::print("[RiveGPU] Attempting to extract GPU device handles from Godot...");
+
+    // Create the GPU bridge - this extracts VkDevice/MTLDevice from RenderingDevice
+    gpu_bridge = rive_godot::RiveGPUBridge::create();
+
+    if (!gpu_bridge) {
+        UtilityFunctions::push_warning("[RiveGPU] Failed to create GPU bridge - RenderingDevice unavailable");
+        UtilityFunctions::print("[RiveGPU] Falling back to CPU (Skia) rendering");
+        return;
+    }
+
+    // Print diagnostic information
+    gpu_bridge->print_diagnostics();
+
+    if (gpu_bridge->is_valid()) {
+        UtilityFunctions::print("[RiveGPU] SUCCESS: GPU device handles extracted!");
+        UtilityFunctions::print("[RiveGPU] Backend: ", gpu_bridge->get_backend_name());
+
+        // Log the actual memory addresses
+        if (gpu_bridge->get_backend() == rive_godot::GPUBackend::VULKAN) {
+            UtilityFunctions::print("[RiveGPU] VkDevice handle: 0x",
+                String::num_int64(gpu_bridge->get_vulkan_device(), 16));
+            UtilityFunctions::print("[RiveGPU] VkPhysicalDevice handle: 0x",
+                String::num_int64(gpu_bridge->get_vulkan_physical_device(), 16));
+
+            // This is the key output - proves we can talk to Godot's GPU
+            if (gpu_bridge->get_vulkan_device() != 0) {
+                UtilityFunctions::print("[RiveGPU] *** HARDWARE HANDSHAKE SUCCESSFUL ***");
+                UtilityFunctions::print("[RiveGPU] Rive GPU Renderer can be initialized with this VkDevice");
+            }
+        } else if (gpu_bridge->get_backend() == rive_godot::GPUBackend::METAL) {
+            UtilityFunctions::print("[RiveGPU] MTLDevice handle: 0x",
+                String::num_int64((uint64_t)gpu_bridge->get_metal_device(), 16));
+        }
+    } else {
+        UtilityFunctions::push_warning("[RiveGPU] GPU bridge created but no valid handles extracted");
+        UtilityFunctions::print("[RiveGPU] Falling back to CPU (Skia) rendering");
+    }
+
+    UtilityFunctions::print("[RiveGPU] === End Hardware Handshake ===");
 }
 
 void RiveViewerBase::check_scene_property_changed() {
