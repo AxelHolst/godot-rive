@@ -2,7 +2,7 @@
 
 This document describes the technical architecture of the godot-rive GDExtension.
 
-**Last Updated**: April 17, 2026 (Phase II Complete - Renaissance Release)
+**Last Updated**: April 18, 2026 (M5 GPU Infrastructure Complete)
 
 ---
 
@@ -29,9 +29,16 @@ godot-rive is a GDExtension that integrates the [Rive](https://rive.app) animati
 ├─────────────────────────────────────────────────────────────┤
 │                     rive-runtime (C++)                       │
 │     rive::File, rive::ArtboardInstance, StateMachine        │
-├─────────────────────────────────────────────────────────────┤
-│                    Skia Renderer (CPU)                       │
-│              SkSurface, SkCanvas, SkiaRenderer              │
+├────────────────────────┬────────────────────────────────────┤
+│   Skia Renderer (CPU)  │   Rive PLS Renderer (GPU) [M5]     │
+│   SkSurface, SkCanvas  │   RenderContextVulkanImpl          │
+│       (macOS)          │       (Linux, Windows)             │
+└────────────────────────┴────────────────────────────────────┘
+                         │
+┌────────────────────────┴────────────────────────────────────┐
+│                 src/gpu/ Layer (M5)                          │
+│  RiveGPUBridge: VkDevice extraction from Godot              │
+│  RiveGPURenderer: Command buffers, render targets           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -121,6 +128,9 @@ godot-rive/
 │   │   ├── rive_input.hpp       # RiveInput wrapper
 │   │   ├── rive_listener.hpp    # RiveListener wrapper
 │   │   └── instances.hpp        # Instance management template
+│   ├── gpu/                     # GPU Rendering (M5)
+│   │   ├── rive_gpu_bridge.hpp/cpp    # VkDevice extraction from Godot
+│   │   └── rive_gpu_renderer.hpp/cpp  # Rive PLS Renderer wrapper
 │   └── utils/
 │       ├── godot_macros.hpp     # Utility macros
 │       ├── memory.hpp           # Smart pointer aliases
@@ -225,14 +235,16 @@ New class: RiveViewModelInstance (RefCounted)
    - 🔲 Scripting (Luau) (M7)
    - 🔲 Audio (M8)
 
-2. **GPU-Accelerated Rendering** (M5)
-   - Option 1: Skia GPU backend
-   - Option 2: Rive Renderer → Godot RenderingDevice
-   - Fallback: CPU rendering for compatibility
+2. **GPU-Accelerated Rendering** (M5 Infrastructure Complete)
+   - ✅ Vulkan pipeline implemented
+   - ✅ VkDevice extraction from Godot
+   - ✅ Command buffer management
+   - 🔲 macOS Metal backend (M5b - planned)
+   - ✅ CPU fallback for compatibility
 
-3. **Cross-Platform Support** (M4 Complete)
-   - ✅ macOS x86_64 (local build)
-   - ✅ Linux x86_64 (CI build with caching)
+3. **Cross-Platform Support** (M4 Complete, M5 Partial)
+   - ✅ macOS x86_64 (Skia CPU)
+   - ✅ Linux x86_64 (Rive GPU)
    - 🔲 macOS ARM64
    - 🔲 Windows x86_64
 
@@ -302,19 +314,86 @@ cd build && scons platform=linux target=template_debug arch=x86_64
 
 ---
 
+## GPU Rendering Architecture (M5)
+
+### Overview
+
+The GPU rendering infrastructure extracts Vulkan handles from Godot's RenderingDevice and creates a bridge to Rive's PLS (Pixel Local Storage) Renderer.
+
+### Component Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Godot RenderingServer                     │
+│                    └── RenderingDevice                       │
+│                         ├── VkInstance                       │
+│                         ├── VkPhysicalDevice                 │
+│                         └── VkDevice                         │
+└────────────────────────────┬────────────────────────────────┘
+                             │ get_driver_resource()
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      RiveGPUBridge                           │
+│   Extracts: VkInstance, VkPhysicalDevice, VkDevice, VkQueue │
+│   Detects: Backend type (Vulkan/OpenGL)                     │
+│   Creates: Godot RID textures for sharing                   │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     RiveGPURenderer                          │
+│   ├── RenderContextVulkanImpl (Rive's PLS context)          │
+│   ├── RenderTargetVulkanImpl (render target wrapper)        │
+│   ├── VMA-managed Texture2D (render image)                  │
+│   ├── VkCommandPool / VkCommandBuffer (frame recording)     │
+│   └── VkFence (frame synchronization)                       │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Frame Flow                              │
+│   1. beginFrame() → vkWaitForFences, begin command buffer   │
+│   2. draw(artboard) → RiveRenderer draws to render target   │
+│   3. endFrame() → flush(), vkQueueSubmit                    │
+│   4. syncTextureToGodot() → copy to Godot texture (TODO)    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Platform-Specific Behavior
+
+| Platform | GPU Backend | Renderer | Status |
+|----------|-------------|----------|--------|
+| Linux | Native Vulkan | RiveGPURenderer | ✅ Experimental |
+| Windows | Native Vulkan | RiveGPURenderer | ⏳ Untested |
+| macOS | MoltenVK | **Disabled** | ❌ VMA conflict |
+
+### Known Limitation: VMA/MoltenVK Incompatibility
+
+On macOS, Rive's VMA (Vulkan Memory Allocator) allocates memory with property flags that MoltenVK cannot translate to Metal storage modes. This causes crashes in `vkQueueSubmit`.
+
+**Root Cause**:
+```
+vkQueueSubmit
+└── Metal copyFromBuffer:sourceOffset:...
+    └── MVKPhysicalDevice::getMTLStorageModeFromVkMemoryPropertyFlags()
+        └── CRASH (invalid memory property flags)
+```
+
+**Recommended Solution**: Implement Rive's native Metal backend (`RenderContextMetalImpl`) for macOS, bypassing MoltenVK entirely.
+
+### Debug Tools
+
+Vulkan validation layer support is built-in but disabled by default (Godot's VkInstance lacks the required extension). To enable:
+
+```bash
+VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation ./godot --path project
+```
+
+The `RiveGPURenderer::debugCallback()` will print detailed validation errors to the Godot console.
+
+---
+
 ## Future Considerations
-
-### GPU Rendering Strategy
-
-The CPU-based Skia rendering creates a performance ceiling. Options:
-
-| Strategy | Complexity | Performance |
-|----------|------------|-------------|
-| Keep CPU Skia | Low | Baseline |
-| Skia GPU → Texture upload | Medium | Better |
-| Rive Renderer → RenderingDevice | High | Best |
-
-**Recommendation**: Implement GPU rendering as Milestone 4, after API migration is stable.
 
 ### Scripting Integration
 

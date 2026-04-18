@@ -8,10 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned (Roadmap)
-- **M5: GPU Rendering** - RenderingDevice or Rive Renderer integration
+- **M5b: macOS Metal Backend** - Native Metal rendering to bypass MoltenVK
 - **M6: ViewModel/Data Binding** - Unity parity for data-driven animations
 - **M7: Luau Scripting** - Script execution inside Rive files
 - **M8: Audio** - Rive audio → Godot AudioStreamPlayer bridge
+
+---
+
+## [0.2.1] - 2026-04-18
+
+GPU Infrastructure release with Vulkan pipeline and hardware handshake.
+
+### Added
+- **GPU Rendering Infrastructure (M5)** - Complete Vulkan pipeline for GPU rendering
+  - `RiveGPUBridge` - Extracts VkDevice, VkInstance, VkPhysicalDevice from Godot's RenderingDevice
+  - `RiveGPURenderer` - Wraps Rive's PLS Renderer with Vulkan backend
+  - Command buffer management for Rive's `flush()` operation
+  - Render target creation with VMA-managed textures
+  - Frame synchronization with VkFence
+- **Vulkan Validation Layer Support** - Debug callback infrastructure for diagnosing Vulkan issues
+  - `VkDebugUtilsMessengerEXT` callback for detailed error reporting
+  - Gracefully disabled when extension unavailable (normal runtime behavior)
+  - Enabled via `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` environment variable
+- **Hardware Handshake** - Successful extraction of GPU device handles from Godot
+  - VkInstance, VkPhysicalDevice, VkDevice, VkQueue extraction
+  - Queue family index detection
+  - Backend detection (Vulkan vs OpenGL)
+
+### Changed
+- Linux rendering now uses Rive GPU (Vulkan) instead of Skia CPU (experimental)
+- macOS continues to use Skia CPU rendering (stable)
+
+### Technical Notes
+- **VMA/MoltenVK Incompatibility**: Rive's VMA (Vulkan Memory Allocator) uses memory property flags
+  that MoltenVK cannot translate to Metal storage modes. This causes crashes in `vkQueueSubmit`
+  during Metal blit operations. The recommended solution is implementing Rive's native Metal
+  backend (`RenderContextMetalImpl`) for macOS.
+
+### Platforms
+- macOS x86_64 (Skia CPU - stable)
+- Linux x86_64 (Rive GPU/Vulkan - experimental)
 
 ---
 

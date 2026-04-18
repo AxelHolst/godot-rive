@@ -233,10 +233,42 @@ private:
     VkDevice m_vkDevice = VK_NULL_HANDLE;
     VkPhysicalDevice m_vkPhysicalDevice = VK_NULL_HANDLE;
     VkInstance m_vkInstance = VK_NULL_HANDLE;
+    VkQueue m_vkQueue = VK_NULL_HANDLE;
+    uint32_t m_vkQueueFamilyIndex = 0;
+
+    // Vulkan validation/debug (for diagnosing MoltenVK issues)
+    VkDebugUtilsMessengerEXT m_debugMessenger = VK_NULL_HANDLE;
+    static bool s_validationEnabled;
+    bool setupValidationLayers();
+    void destroyValidationLayers();
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageType,
+        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData);
+
+    // Command buffer management (owned by us)
+    VkCommandPool m_commandPool = VK_NULL_HANDLE;
+    VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+    VkFence m_frameFence = VK_NULL_HANDLE;  // Fence for frame synchronization
+
+    // Command buffer helpers
+    bool createCommandResources();
+    void destroyCommandResources();
+    bool beginCommandBuffer();
+    bool endAndSubmitCommandBuffer();
 
     // Godot texture integration
     godot::RID m_godotTextureRID;
     const RiveGPUBridge* m_bridge = nullptr;
+
+    // Render target texture (owned by Rive's VulkanContext via VMA)
+    // This ensures consistent memory allocation with Rive's internal buffers
+    rive::rcp<rive::gpu::vkutil::Texture2D> m_renderTexture;
+
+    // Texture sync helper
+    bool syncTextureToGodot();   // Sync/copy pixels to Godot texture
+    bool createRenderTexture();  // Create render texture via Rive's VMA
 };
 
 } // namespace rive_godot

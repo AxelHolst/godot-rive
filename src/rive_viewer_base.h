@@ -9,6 +9,7 @@
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/image_texture.hpp>
+#include <godot_cpp/classes/texture2drd.hpp>
 #include <godot_cpp/classes/input_event.hpp>
 #include <godot_cpp/classes/input_event_mouse.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
@@ -72,7 +73,12 @@ class RiveViewerBase {
 #if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
     static std::unique_ptr<rive_godot::RiveGPURenderer> gpu_renderer;
     static bool gpu_renderer_failed;  // Prevent repeated init attempts
+    static Ref<Texture2DRD> gpu_texture;  // Wraps GPU renderer's RID for CanvasItem drawing
 #endif
+
+    // GPU rendering helper methods
+    bool try_gpu_frame(float delta);  // Returns true if GPU rendering succeeded
+    void ensure_gpu_texture_size();   // Resize GPU renderer to match viewer size
 
    protected:
     void _on_path_changed(String path);
