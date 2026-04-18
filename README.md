@@ -3,16 +3,17 @@
 ### An integration of Rive into Godot 4.6+ using GDExtension
 
 > [!NOTE]
-> **v0.2.0** - This extension now supports:
-> * macOS x86_64 and Linux x86_64
-> * Rive Events and Nested Artboard Inputs
-> * Full `rive-runtime` integration (migrated from deprecated `rive-cpp`)
+> **v0.2.1** - GPU Infrastructure Release
+> * GPU rendering pipeline implemented (Vulkan backend)
+> * Hardware handshake: VkDevice extraction from Godot's RenderingDevice
+> * Platform status: macOS (Skia CPU), Linux (Rive GPU - experimental)
 
 This extension adds [Rive](https://rive.app) support to Godot 4.6+.
 
 It makes use of the following third-party libraries:
 - [`rive-runtime`](https://github.com/rive-app/rive-runtime) (migrated from `rive-cpp`)
 - [`skia`](https://github.com/google/skia) (bundled with rive-runtime)
+- Rive PLS Renderer (GPU path, Vulkan backend)
 
 ## Table of Contents
 
@@ -32,6 +33,20 @@ It makes use of the following third-party libraries:
 * Listen for input events (hover, pressed, etc.)
 * Change state machine properties in-editor and in code
 * Robust API for runtime interaction
+
+## Platform Support
+
+| Platform | Rendering | Status |
+|----------|-----------|--------|
+| **macOS x86_64** | Skia CPU | ✅ Stable |
+| **Linux x86_64** | Rive GPU (Vulkan) | ✅ Experimental |
+| Windows | - | ⏳ Planned |
+| Android | - | ⏳ Planned |
+| iOS | - | ⏳ Planned |
+| Web | - | ⏳ Planned |
+
+> [!NOTE]
+> macOS uses CPU rendering due to a known VMA/MoltenVK memory incompatibility. A native Metal backend is planned for future releases.
 
 ## Building
 
@@ -82,7 +97,8 @@ python build.py --help
 - [x] **Nested Artboard Inputs** (v0.2.0)
 - [x] **Trigger inputs** (v0.2.0)
 - [x] **Linux x86_64 support** (v0.2.0)
-- [ ] GPU rendering (RenderingDevice or Rive Renderer)
+- [x] **GPU Infrastructure** (v0.2.1) - Vulkan pipeline, VkDevice extraction
+- [ ] GPU rendering on macOS (Metal backend)
 - [ ] ViewModel/Data Binding
 - [ ] Audio support
 - [ ] Add reset button

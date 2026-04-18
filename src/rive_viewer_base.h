@@ -9,6 +9,7 @@
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/image_texture.hpp>
+#include <godot_cpp/classes/texture2drd.hpp>
 #include <godot_cpp/classes/input_event.hpp>
 #include <godot_cpp/classes/input_event_mouse.hpp>
 #include <godot_cpp/classes/input_event_mouse_button.hpp>
@@ -39,6 +40,12 @@
 #include "utils/types.hpp"
 #include "viewer_props.hpp"
 
+// GPU Rendering (Milestone 5)
+#include "gpu/rive_gpu_bridge.hpp"
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+#include "gpu/rive_gpu_renderer.hpp"
+#endif
+
 using namespace godot;
 
 static bool is_editor_hint() {
@@ -59,6 +66,20 @@ class RiveViewerBase {
     Ref<Image> image;
     Ref<ImageTexture> texture;
 
+    // GPU Rendering (Milestone 5) - Vulkan-first approach
+    // Static members: Shared across all viewer instances
+    static bool gpu_probed;
+    static std::unique_ptr<rive_godot::RiveGPUBridge> gpu_bridge;
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+    static std::unique_ptr<rive_godot::RiveGPURenderer> gpu_renderer;
+    static bool gpu_renderer_failed;  // Prevent repeated init attempts
+    static Ref<Texture2DRD> gpu_texture;  // Wraps GPU renderer's RID for CanvasItem drawing
+#endif
+
+    // GPU rendering helper methods
+    bool try_gpu_frame(float delta);  // Returns true if GPU rendering succeeded
+    void ensure_gpu_texture_size();   // Resize GPU renderer to match viewer size
+
    protected:
     void _on_path_changed(String path);
     void _on_artboard_changed(int index);
@@ -68,6 +89,7 @@ class RiveViewerBase {
     void _on_transform_changed();
     void load_rive_file(String path);
     void deferred_init();  // Called on first process frame, when bindings are definitely ready
+    void probe_gpu_device();  // M5: Attempt to extract GPU device handles
     void check_scene_property_changed();
     bool advance(float delta);
     void poll_events();

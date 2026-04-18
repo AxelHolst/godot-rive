@@ -28,6 +28,20 @@
 
 const Image::Format IMAGE_FORMAT = Image::Format::FORMAT_RGBA8;
 
+// =============================================================================
+// GPU RENDERING (Milestone 5) - Static members
+// =============================================================================
+// These are static so we only probe the GPU once per process, not per viewer.
+// The GPU bridge extracts VkDevice/MTLDevice from Godot's RenderingDevice.
+// The GPU renderer (if available) is shared across all viewer instances.
+bool RiveViewerBase::gpu_probed = false;
+std::unique_ptr<rive_godot::RiveGPUBridge> RiveViewerBase::gpu_bridge = nullptr;
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+std::unique_ptr<rive_godot::RiveGPURenderer> RiveViewerBase::gpu_renderer = nullptr;
+bool RiveViewerBase::gpu_renderer_failed = false;
+Ref<Texture2DRD> RiveViewerBase::gpu_texture;  // Wraps GPU renderer's RID for CanvasItem
+#endif
+
 RiveViewerBase::RiveViewerBase(CanvasItem *owner) {
     this->owner = owner;
     inst.set_props(&props, &initialized);  // Pass initialized flag for callback guards
@@ -61,6 +75,14 @@ void RiveViewerBase::on_input_event(const Ref<InputEvent> &event) {
 }
 
 void RiveViewerBase::on_draw() {
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+    // GPU path: use Texture2DRD if available and valid
+    if (gpu_texture.is_valid() && gpu_renderer && gpu_renderer->is_valid() && !gpu_renderer_failed) {
+        owner->draw_texture_rect(gpu_texture, Rect2(0, 0, width(), height()), false);
+        return;
+    }
+#endif
+    // CPU path: use ImageTexture from Skia
     if (!is_null(texture)) owner->draw_texture_rect(texture, Rect2(0, 0, width(), height()), false);
 }
 
@@ -71,6 +93,20 @@ void RiveViewerBase::on_process(float delta) {
     }
 
     if (owner->is_node_ready() && !props.paused()) {
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+        // =======================================================================
+        // GPU RENDERING PATH (Milestone 5)
+        // =======================================================================
+        // Try GPU rendering first. If it succeeds, we're done.
+        // If it fails, fall back to CPU (Skia) rendering.
+        if (try_gpu_frame(delta)) {
+            check_scene_property_changed();
+            return;  // GPU frame succeeded
+        }
+#endif
+        // =======================================================================
+        // CPU RENDERING PATH (Skia fallback)
+        // =======================================================================
         // Recreate image/texture if size changed
         if (is_null(image) || image->get_width() != width() || image->get_height() != height()) {
             image = Image::create(width(), height(), false, IMAGE_FORMAT);
@@ -97,6 +133,14 @@ void RiveViewerBase::deferred_init() {
     initialized = true;  // Now safe to process callbacks that create Ref<> objects
 
     RIVE_DEBUG_LOG("[RiveViewer] deferred_init() starting...");
+
+    // ========================================================================
+    // MILESTONE 5: GPU DEVICE PROBE (Vulkan-first approach)
+    // ========================================================================
+    // Attempt to extract GPU device handles from Godot's RenderingDevice.
+    // This runs once per process (static flag) to avoid redundant probing.
+    // The extracted VkDevice will be used for Rive GPU Renderer initialization.
+    probe_gpu_device();
 
     // Deferred file loading - if a file path was set during scene loading,
     // we couldn't load it then because bindings weren't ready. Load it now.
@@ -167,6 +211,200 @@ void RiveViewerBase::deferred_init() {
 
     props.size(width(), height());
 }
+
+// =============================================================================
+// MILESTONE 5: GPU DEVICE EXTRACTION AND RENDERER INITIALIZATION
+// =============================================================================
+void RiveViewerBase::probe_gpu_device() {
+    // Only probe once per process lifetime
+    if (gpu_probed) return;
+    gpu_probed = true;
+
+    // Skip GPU probe in editor to avoid potential issues during scene editing
+    if (is_editor_hint()) {
+        UtilityFunctions::print("[RiveGPU] Skipping GPU probe in editor mode");
+        return;
+    }
+
+    UtilityFunctions::print("[RiveGPU] === Hardware Handshake ===");
+    UtilityFunctions::print("[RiveGPU] Attempting to extract GPU device handles from Godot...");
+
+    // Create the GPU bridge - this extracts VkDevice/MTLDevice from RenderingDevice
+    gpu_bridge = rive_godot::RiveGPUBridge::create();
+
+    if (!gpu_bridge) {
+        UtilityFunctions::push_warning("[RiveGPU] Failed to create GPU bridge - RenderingDevice unavailable");
+        UtilityFunctions::print("[RiveGPU] Falling back to CPU (Skia) rendering");
+        return;
+    }
+
+    // Print diagnostic information
+    gpu_bridge->print_diagnostics();
+
+    if (gpu_bridge->is_valid()) {
+        UtilityFunctions::print("[RiveGPU] SUCCESS: GPU device handles extracted!");
+        UtilityFunctions::print("[RiveGPU] Backend: ", gpu_bridge->get_backend_name());
+
+        // Log the actual memory addresses
+        if (gpu_bridge->get_backend() == rive_godot::GPUBackend::VULKAN) {
+            UtilityFunctions::print("[RiveGPU] VkInstance handle: 0x",
+                String::num_int64(gpu_bridge->get_vulkan_instance(), 16));
+            UtilityFunctions::print("[RiveGPU] VkPhysicalDevice handle: 0x",
+                String::num_int64(gpu_bridge->get_vulkan_physical_device(), 16));
+            UtilityFunctions::print("[RiveGPU] VkDevice handle: 0x",
+                String::num_int64(gpu_bridge->get_vulkan_device(), 16));
+
+            // This is the key output - proves we can talk to Godot's GPU
+            UtilityFunctions::print("[RiveGPU] *** HARDWARE HANDSHAKE SUCCESSFUL ***");
+
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+            // Attempt to create the GPU renderer
+            UtilityFunctions::print("[RiveGPU] Attempting to initialize GPU renderer...");
+
+            rive_godot::GPURendererConfig config;
+            config.width = 512;   // Default size, will be resized per-viewer
+            config.height = 512;
+            config.forceAtomicMode = false;
+
+            gpu_renderer = rive_godot::RiveGPURenderer::create(*gpu_bridge, config);
+
+            if (gpu_renderer && gpu_renderer->is_valid()) {
+                UtilityFunctions::print("[RiveGPU] *** GPU RENDERER INITIALIZED ***");
+                gpu_renderer->printDiagnostics();
+            } else {
+                UtilityFunctions::push_warning("[RiveGPU] GPU renderer initialization failed");
+                UtilityFunctions::print("[RiveGPU] Falling back to CPU (Skia) rendering");
+                gpu_renderer.reset();
+                gpu_renderer_failed = true;
+            }
+#else
+            UtilityFunctions::print("[RiveGPU] GPU renderer not compiled (RIVE_GPU_RENDERER not defined)");
+            UtilityFunctions::print("[RiveGPU] Using CPU (Skia) rendering");
+#endif
+        } else if (gpu_bridge->get_backend() == rive_godot::GPUBackend::METAL) {
+            UtilityFunctions::print("[RiveGPU] MTLDevice handle: 0x",
+                String::num_int64((uint64_t)gpu_bridge->get_metal_device(), 16));
+            UtilityFunctions::print("[RiveGPU] Metal backend not yet implemented, using CPU (Skia) rendering");
+        }
+    } else {
+        if (gpu_bridge->has_partial_vulkan()) {
+            UtilityFunctions::push_warning("[RiveGPU] Partial Vulkan handles - missing VkInstance");
+        } else {
+            UtilityFunctions::push_warning("[RiveGPU] GPU bridge created but no valid handles extracted");
+        }
+        UtilityFunctions::print("[RiveGPU] Falling back to CPU (Skia) rendering");
+    }
+
+    UtilityFunctions::print("[RiveGPU] === End Hardware Handshake ===");
+}
+
+// =============================================================================
+// MILESTONE 5: GPU RENDERING FRAME
+// =============================================================================
+#if defined(RIVE_GPU_RENDERER) && defined(RIVE_VULKAN)
+
+void RiveViewerBase::ensure_gpu_texture_size() {
+    if (!gpu_renderer || !gpu_renderer->is_valid()) return;
+
+    uint32_t w = static_cast<uint32_t>(width());
+    uint32_t h = static_cast<uint32_t>(height());
+
+    // Resize GPU renderer if needed
+    if (gpu_renderer->width() != w || gpu_renderer->height() != h) {
+        if (!gpu_renderer->resize(w, h)) {
+            UtilityFunctions::push_warning("[RiveGPU] Failed to resize GPU renderer");
+            gpu_renderer_failed = true;
+            return;
+        }
+
+        // Update Texture2DRD with new RID
+        if (!gpu_texture.is_valid()) {
+            gpu_texture.instantiate();
+        }
+        gpu_texture->set_texture_rd_rid(gpu_renderer->getGodotTextureRID());
+    }
+}
+
+bool RiveViewerBase::try_gpu_frame(float delta) {
+    // Guard: GPU renderer must be available and not failed
+    if (!gpu_renderer || !gpu_renderer->is_valid() || gpu_renderer_failed) {
+        return false;
+    }
+
+    // Guard: Must have an artboard to render
+    auto artboard = inst.artboard();
+    if (!exists(artboard) || !artboard->artboard) {
+        return false;
+    }
+
+    // Ensure GPU texture matches viewer size
+    ensure_gpu_texture_size();
+    if (gpu_renderer_failed) {
+        return false;  // Resize failed
+    }
+
+    // Create Texture2DRD wrapper if needed
+    if (!gpu_texture.is_valid()) {
+        gpu_texture.instantiate();
+        gpu_texture->set_texture_rd_rid(gpu_renderer->getGodotTextureRID());
+        UtilityFunctions::print("[RiveGPU] Created Texture2DRD wrapper");
+    }
+
+    // Advance animation state
+    advance(delta);
+
+    // Only render if visible
+    if (!owner->is_visible()) {
+        return true;  // Still "succeeded" - just nothing to draw
+    }
+
+    // =======================================================================
+    // GPU FRAME RENDERING
+    // =======================================================================
+    if (!gpu_renderer->beginFrame()) {
+        UtilityFunctions::push_warning("[RiveGPU] beginFrame() failed - falling back to CPU");
+        gpu_renderer_failed = true;
+        return false;
+    }
+
+    // Calculate transform to fit artboard in viewer (same logic as Skia path)
+    Rect2 bounds = artboard->get_bounds();
+    float artboardWidth = bounds.size.x;
+    float artboardHeight = bounds.size.y;
+    float canvasWidth = static_cast<float>(width());
+    float canvasHeight = static_cast<float>(height());
+
+    rive::Mat2D transform;
+    if (artboardWidth > 0 && artboardHeight > 0) {
+        float scale = std::min(canvasWidth / artboardWidth, canvasHeight / artboardHeight);
+        float tx = (canvasWidth - artboardWidth * scale) / 2.0f;
+        float ty = (canvasHeight - artboardHeight * scale) / 2.0f;
+
+        // Build transform: translate then scale
+        transform = rive::Mat2D(scale, 0, 0, scale, tx, ty);
+    }
+
+    // Draw artboard to GPU
+    gpu_renderer->draw(artboard->artboard.get(), &transform);
+
+    // End frame and flush to GPU
+    if (!gpu_renderer->endFrame()) {
+        UtilityFunctions::push_warning("[RiveGPU] endFrame() failed - falling back to CPU");
+        gpu_renderer_failed = true;
+        return false;
+    }
+
+    // Request redraw so on_draw() will display the GPU texture
+    owner->queue_redraw();
+
+    return true;  // GPU frame succeeded
+}
+
+#else
+// Stub implementations when GPU renderer is not compiled
+void RiveViewerBase::ensure_gpu_texture_size() {}
+bool RiveViewerBase::try_gpu_frame(float delta) { return false; }
+#endif
 
 void RiveViewerBase::check_scene_property_changed() {
     if (props.disable_hover() && props.disable_press()) return;  // Don't bother checking if input is disabled
