@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 from os.path import join
 
+# =============================================================================
+# BUILD CONFIGURATION FLAGS
+# =============================================================================
+# GPU rendering support (Milestone 5) - currently disabled until Metal shaders
+# can be compiled (requires full Xcode, not just Command Line Tools)
+ENABLE_GPU_RENDERER = False  # Set to True when Metal/.metallib is available
 
 def GetRiveBin(path: str) -> str:
     """Get path to rive-runtime binary library."""
@@ -117,9 +123,10 @@ if env["platform"] == "macos":
         "-framework", "CoreGraphics",
         "-framework", "CoreFoundation",
         "-framework", "CoreServices",  # For kUTType* symbols used by Skia image encoders
-        "-framework", "Metal",  # Skia Metal backend
+        "-framework", "Metal",  # Skia Metal backend + Rive GPU Renderer
         "-framework", "Foundation",  # Foundation for Objective-C runtime
         "-framework", "ImageIO",  # For kCGImageProperty* symbols
+        "-framework", "QuartzCore",  # CAMetalLayer for GPU rendering (M5)
     ])
     # Remove dead_strip and stripping flags to preserve Skia symbols
     strip_flags = ["-Wl,-dead_strip", "-Wl,-S", "-Wl,-x"]
@@ -187,6 +194,35 @@ env.Prepend(
         join(RIVE_RUNTIME_DIR, "skia/renderer/src"),
     ],
 )
+
+# =============================================================================
+# MILESTONE 5: GPU RENDERER INFRASTRUCTURE (Rive PLS Renderer)
+# =============================================================================
+# The Rive Renderer is a native GPU renderer that uses Metal/Vulkan directly.
+# This is preparation for GPU rendering - currently disabled until Metal shaders
+# can be compiled (requires full Xcode installation with Metal compiler).
+#
+# Include paths are added regardless of ENABLE_GPU_RENDERER so that the
+# RiveGPUBridge prototype can be developed and tested.
+# =============================================================================
+RIVE_RENDERER_DIR = join(RIVE_RUNTIME_DIR, "renderer")
+RIVE_RENDERER_GENERATED = join(RIVE_RENDERER_DIR, "out/debug/include")
+
+env.Append(
+    CPPPATH=[
+        join(RIVE_RENDERER_DIR, "include"),
+        join(RIVE_RENDERER_DIR, "src"),
+        RIVE_RENDERER_GENERATED,  # Generated shader headers
+    ],
+)
+
+# GPU Renderer define for conditional compilation in source code
+if ENABLE_GPU_RENDERER:
+    env.Append(CPPDEFINES=["RIVE_GPU_RENDERER"])
+    # When GPU renderer is enabled, we would add librive_pls_renderer.a here
+    # gpu_renderer_lib = GetRiveBin("renderer/out/{target}/librive_pls_renderer{suffix}")
+    # env.RequireFile(gpu_renderer_lib)
+    # env.Prepend(LIBS=[gpu_renderer_lib])
 
 # Add source files
 env.Append(CPPPATH=["../src/"])

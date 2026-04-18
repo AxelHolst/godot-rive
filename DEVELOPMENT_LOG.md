@@ -1102,3 +1102,114 @@ Research Godot's RenderingDevice API and evaluate:
 2. Rive Renderer (native GPU renderer)
 3. Performance benchmarks CPU vs GPU
 
+---
+
+## 2026-04-18: Milestone 5 Phase 1 - GPU Rendering Infrastructure
+
+### Feasibility Study Complete
+
+Comprehensive analysis of GPU rendering options for godot-rive:
+
+**Current CPU Rendering Bottleneck:**
+```
+CPU Rasterization (2-10ms) → PackedByteArray copy (0.5-2ms) → Texture Upload (1-5ms)
+Total: 4-17ms per frame = <60fps for complex animations
+```
+
+**Evaluated Options:**
+
+| Option | Description | Verdict |
+|--------|-------------|---------|
+| A: Skia GPU | Use GrDirectContext + GPU SkSurface | Medium complexity, partial benefit |
+| B: Rive Renderer | Native GPU renderer (Metal/Vulkan) | ✅ RECOMMENDED - Full GPU path |
+| C: Compute Shader | Reimplement Rive rendering in GLSL | Not feasible |
+
+**Decision:** Proceed with **Option B (Rive Renderer)** for maximum performance.
+
+### Phase 1 Implementation
+
+**Completed:**
+
+1. **Generated Shader Headers**
+   - Location: `thirdparty/rive-runtime/renderer/out/debug/include/generated/shaders/`
+   - 30 GLSL shader headers (.hpp) generated via `minify.py`
+   - Python PLY dependency fetched automatically
+
+2. **SConstruct Updates**
+   - Added `QuartzCore.framework` for GPU rendering support
+   - Added Rive Renderer include paths
+   - Added `ENABLE_GPU_RENDERER` flag (currently disabled)
+   - Added `RIVE_GPU_RENDERER` preprocessor define for conditional compilation
+
+3. **RiveGPUBridge Prototype**
+   - New file: `src/gpu/rive_gpu_bridge.hpp`
+   - Extracts VkDevice/VkInstance from Godot's RenderingDevice
+   - Uses `get_driver_resource(DRIVER_RESOURCE_LOGICAL_DEVICE)` API
+   - Foundation for Rive RenderContext initialization
+
+**Blocked:**
+
+4. **Metal Shader Compilation**
+   - Requires full Xcode (not just Command Line Tools)
+   - `xcrun metal` compiler not available
+   - Metal `.metallib` files cannot be generated locally
+
+### Build Verification
+
+```bash
+scons platform=macos target=template_debug arch=x86_64
+# Output: librive.macos.template_debug.framework (SUCCESS)
+```
+
+### Godot RenderingDevice Integration Points
+
+Key methods identified for GPU texture sharing:
+- `get_driver_resource(DRIVER_RESOURCE_LOGICAL_DEVICE)` → VkDevice
+- `get_driver_resource(DRIVER_RESOURCE_PHYSICAL_DEVICE)` → VkPhysicalDevice
+- `texture_create_from_extension()` → Wrap external VkImage
+- `submit()` / `sync()` → Frame synchronization
+
+### Files Modified
+
+| Category | Files |
+|----------|-------|
+| Build | `build/SConstruct` (GPU infrastructure) |
+| Source | `src/gpu/rive_gpu_bridge.hpp` (NEW - GPU device extraction) |
+| Dependencies | `thirdparty/rive-runtime/renderer/dependencies/` (PLY added) |
+| Shaders | `thirdparty/rive-runtime/renderer/out/debug/include/generated/` |
+
+### Next Steps (Phase 2)
+
+1. **Install Xcode** on development machine to enable Metal shader compilation
+2. **Build librive_pls_renderer.a** with Metal support
+3. **Implement RiveGPURenderer class** wrapping `RenderContextMetalImpl`
+4. **Create GPU texture sharing** between Rive and Godot
+5. **Benchmark CPU vs GPU** rendering paths
+
+### Architecture Notes
+
+**Rive Renderer Pipeline:**
+```
+RenderContext (platform-agnostic)
+    └── RenderContextMetalImpl (macOS)
+        └── RiveRenderer (draw artboard)
+            └── RenderTarget (Godot texture)
+```
+
+**Frame Synchronization Pattern:**
+```cpp
+// From rive-unity analysis
+renderContext->beginFrame(frameDesc);
+renderer->transform(matrix);
+artboard->draw(renderer);
+renderContext->flush({.renderTarget = target, .frameNumber = n});
+```
+
+### Milestone Status Update
+
+| Milestone | Status | Description |
+|-----------|--------|-------------|
+| M1-M4 | ✅ Complete | Core runtime, events, Linux CI |
+| **M5: GPU Rendering** | 🔄 Phase 1 Done | Infrastructure ready, needs Xcode |
+| M6-M8 | ⏳ Pending | ViewModel, Scripting, Audio |
+
